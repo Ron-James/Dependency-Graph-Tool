@@ -8,18 +8,22 @@ Use **Add package from git URL...** in the Unity Package Manager and paste:
 
 `https://github.com/Ron-James/Dependency-Graph-Tool.git`
 
-## Package contents
-
-This package is intentionally scoped to only the Scene Dependency Graph editor files from:
-
-- `Graph-Tool/Assets/_Assets/Editor/SceneDependencyGraph`
-
-The packaged source is under:
-
-- `Editor/SceneDependencyGraph`
-
 ## Open the tool
 
 In Unity, open:
 
 `Tools > Scene Dependency Graph`
+
+## What it scans
+
+- Serialized Unity object references
+- Managed objects marked with `[SerializeReference]`
+- UnityEvent persistent listeners
+- Custom dependencies emitted through `IDependencyEmitter`
+
+## Runtime/editor split
+
+- `Runtime/IDependencyEmitter.cs` contains the dependency emitter contract.
+- Editor graph/scanning code lives under `Editor/`.
+
+For extension details, see [Documentation~/SCENE_DEPENDENCY_GRAPH.md](Documentation~/SCENE_DEPENDENCY_GRAPH.md) and [Documentation~/EXTENDING_SPECIALIZED_NODES.md](Documentation~/EXTENDING_SPECIALIZED_NODES.md).

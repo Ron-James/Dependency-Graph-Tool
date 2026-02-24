@@ -4,11 +4,11 @@ This tool is **editor-only** and scans the active scene to render dependency nod
 
 ## Editor-only custom dependency declarations
 
-To keep runtime/player builds clean, dependency-emitter contracts live under the editor folder:
+To keep runtime/player builds clean, the dependency-emitter contract lives in:
 
-- `Assets/_Assets/Code/Scripts/Editor/SceneDependencyGraph/Contracts/IDependencyEmitter.cs`
+- `Runtime/IDependencyEmitter.cs`
 
-Because this contract is editor-only, use one of these patterns when adding custom dependencies:
+When adding custom dependencies, use one of these patterns:
 
 ### Pattern A (recommended): partial class split
 
@@ -35,7 +35,7 @@ public partial class UiBuilderService : IDependencyEmitter
     public void EmitDependencies(IDependencyEmitContext context)
     {
         context.AddDependency(viewFactory, nameof(viewFactory), dependencyKind: "SerializedUnityRef", details: "Factory used to build views");
-        context.AddDependency(themeConfig, nameof(themeConfig), dependencyKind: "CustomEmitter", details: "Theme source");
+        context.AddDependency(themeConfig, nameof(themeConfig), dependencyKind: "SerializeReferenceManaged", details: "Theme source");
     }
 }
 #endif
@@ -61,7 +61,7 @@ Use member/field-like names for best clarity, e.g.:
 ## Dependency kind mapping
 
 `dependencyKind` maps to `DependencyType` by enum-name parsing. If no match is found, it falls back to
-`DependencyType.CustomEmitter`.
+`DependencyType.SerializedUnityRef`.
 
 ## Direction mental model
 

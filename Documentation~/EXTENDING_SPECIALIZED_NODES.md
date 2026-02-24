@@ -3,7 +3,7 @@
 This project supports a contract-based extension point so new services can emit graph dependencies
 without modifying the core scanners each time.
 
-> Note: `IDependencyEmitter` and `IDependencyEmitContext` are defined under the **Editor** folder so they do not affect player builds.
+> Note: `IDependencyEmitter` and `IDependencyEmitContext` are defined in `Runtime/IDependencyEmitter.cs` so gameplay/runtime assemblies can reference them, while scanning/rendering stays editor-only.
 
 ## 1) Implement `IDependencyEmitter` on your component/service
 
@@ -21,7 +21,7 @@ public class UiBuilderService : MonoBehaviour, IDependencyEmitter
     {
         // dependencyKind can be any DependencyType enum string (case-insensitive)
         context.AddDependency(viewFactory, nameof(viewFactory), dependencyKind: "SerializedUnityRef", details: "Builds UI views");
-        context.AddDependency(skinConfig, nameof(skinConfig), dependencyKind: "CustomEmitter", details: "Theme source");
+        context.AddDependency(skinConfig, nameof(skinConfig), dependencyKind: "SerializeReferenceManaged", details: "Theme source");
     }
 }
 ```
@@ -29,13 +29,11 @@ public class UiBuilderService : MonoBehaviour, IDependencyEmitter
 ## 2) Pick dependency type labels
 
 `dependencyKind` maps to `DependencyType` by enum-name parse. If parsing fails, it falls back to
-`DependencyType.CustomEmitter`.
+`DependencyType.SerializedUnityRef`.
 
 Examples:
 - `"UnityEvent"`
 - `"SerializedUnityRef"`
-- `"CommandMember"`
-- `"CustomEmitter"`
 
 ## 3) Port naming rule
 

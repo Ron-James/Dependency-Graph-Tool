@@ -1,12 +1,8 @@
 {
-  "name": "DependencyGraphTool.Editor",
+  "name": "DependencyGraphTool.Runtime",
   "rootNamespace": "",
-  "references": [
-    "DependencyGraphTool.Runtime"
-  ],
-  "includePlatforms": [
-    "Editor"
-  ],
+  "references": [],
+  "includePlatforms": [],
   "excludePlatforms": [],
   "allowUnsafeCode": false,
   "overrideReferences": false,
