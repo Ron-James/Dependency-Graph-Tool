@@ -110,6 +110,24 @@ public sealed class SceneGraphView : GraphView
             CreateVisualNode(node);
         }
 
+        foreach (var node in nodes)
+        {
+            if (node?.FieldSlots == null || !_nodeLookup.TryGetValue(node.GUID, out var visualNode))
+            {
+                continue;
+            }
+
+            foreach (var fieldSlot in node.FieldSlots)
+            {
+                if (fieldSlot == null || !fieldSlot.IsOutput)
+                {
+                    continue;
+                }
+
+                GetOrCreatePort(node.GUID, fieldSlot.Name, visualNode, Direction.Output, fieldSlot.HasValue, fieldSlot.ValueSummary);
+            }
+        }
+
         foreach (var edge in filteredEdges)
         {
             if (!_nodeLookup.TryGetValue(edge.From.GUID, out var fromNode) ||
@@ -118,8 +136,8 @@ public sealed class SceneGraphView : GraphView
                 continue;
             }
 
-            var outputPort = GetOrCreatePort(edge.From.GUID, edge.FieldName, fromNode, Direction.Output);
-            var inputPort = GetOrCreatePort(edge.To.GUID, edge.FieldName, toNode, Direction.Input);
+            var outputPort = GetOrCreatePort(edge.From.GUID, edge.FieldName, fromNode, Direction.Output, hasValue: true, valueSummary: null);
+            var inputPort = GetOrCreatePort(edge.To.GUID, edge.FieldName, toNode, Direction.Input, hasValue: true, valueSummary: null);
             var graphEdge = outputPort.ConnectTo(inputPort);
             graphEdge.userData = edge;
             graphEdge.tooltip = $"{edge.FieldName} ({edge.Type})";
@@ -658,7 +676,7 @@ public sealed class SceneGraphView : GraphView
         visualNode.titleContainer.Insert(0, badge);
     }
 
-    private Port GetOrCreatePort(string nodeGuid, string fieldName, Node node, Direction direction)
+    private Port GetOrCreatePort(string nodeGuid, string fieldName, Node node, Direction direction, bool hasValue, string valueSummary)
     {
         var safeFieldName = string.IsNullOrWhiteSpace(fieldName) ? "unknown" : fieldName;
         var lookup = direction == Direction.Output ? _outputPortsByNodeAndField : _inputPortsByNodeAndField;
@@ -676,9 +694,20 @@ public sealed class SceneGraphView : GraphView
         }
 
         var newPort = node.InstantiatePort(Orientation.Horizontal, direction, Port.Capacity.Multi, typeof(UnityEngine.Object));
-        newPort.portName = direction == Direction.Output
-            ? $"OUT: {safeFieldName}"
-            : $"IN: {safeFieldName}";
+        var suffix = string.IsNullOrWhiteSpace(valueSummary)
+            ? string.Empty
+            : $" ({valueSummary})";
+
+        if (direction == Direction.Output)
+        {
+            var emptyMarker = hasValue ? string.Empty : " [empty]";
+            newPort.portName = $"OUT: {safeFieldName}{emptyMarker}{suffix}";
+            newPort.portColor = hasValue ? new Color(0.3f, 0.8f, 0.4f) : new Color(0.75f, 0.45f, 0.2f);
+        }
+        else
+        {
+            newPort.portName = $"IN: {safeFieldName}{suffix}";
+        }
 
         container.Add(newPort);
         node.RefreshPorts();

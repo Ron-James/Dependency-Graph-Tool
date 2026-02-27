@@ -92,6 +92,7 @@ public sealed class SceneDependencyGraphWindow : EditorWindow
     private FloatField _groupSpacingField;
     private Label _fontSizeLabel;
     private Slider _iconSizeSlider;
+    private Label _nodeGraphProcessorStatusLabel;
     private float _nodeFontSize = DefaultNodeFontSize;
     private float _nodeIconSize = DefaultNodeIconSize;
     private float _horizontalSpacing = 360f;
@@ -106,6 +107,7 @@ public sealed class SceneDependencyGraphWindow : EditorWindow
     private readonly Dictionary<string, Color> _nodeTypeColorOverrides = new();
     private readonly Dictionary<string, Rect> _savedNodePositions = new();
     private readonly Dictionary<string, Color> _nodeColorOverrides = new();
+    private NodeGraphProcessorApi _nodeGraphProcessorApi;
 
     [MenuItem("Tools/Scene Dependency Graph")]
     public static void OpenWindow()
@@ -115,6 +117,7 @@ public sealed class SceneDependencyGraphWindow : EditorWindow
 
     private void OnEnable()
     {
+        _nodeGraphProcessorApi = NodeGraphProcessorApi.Detect();
         LoadNodeTypeColorPreferences();
         LoadNodeColorPreferences();
         LoadWindowSettings();
@@ -202,6 +205,36 @@ public sealed class SceneDependencyGraphWindow : EditorWindow
         _iconSizeSlider.RegisterValueChangedCallback(evt => SetNodeIconSize(evt.newValue));
         toolbar.Add(_iconSizeSlider);
 
+        var ngpWindowButton = new ToolbarButton(() =>
+        {
+            if (_nodeGraphProcessorApi.TryOpenGraphWindow())
+            {
+                return;
+            }
+
+            EditorUtility.DisplayDialog(
+                "NodeGraphProcessor Not Found",
+                "Install com.alelievr.node-graph-processor in your project to enable NodeGraphProcessor editor integration.",
+                "OK");
+        })
+        {
+            text = "NGP Window",
+            tooltip = "Open NodeGraphProcessor graph window if the package is installed.",
+        };
+        toolbar.Add(ngpWindowButton);
+
+        var createNgpAssetButton = new ToolbarButton(CreateNodeGraphProcessorAsset)
+        {
+            text = "Create NGP Graph",
+            tooltip = "Create a BaseGraph asset when NodeGraphProcessor is installed.",
+        };
+        toolbar.Add(createNgpAssetButton);
+
+        _nodeGraphProcessorStatusLabel = new Label();
+        _nodeGraphProcessorStatusLabel.style.marginLeft = 8f;
+        toolbar.Add(_nodeGraphProcessorStatusLabel);
+        UpdateNodeGraphProcessorStatus();
+
         var filterField = new ToolbarMenu { text = "Filter: All" };
         filterField.menu.AppendAction("All", _ => SetFilter(null));
         foreach (DependencyType type in Enum.GetValues(typeof(DependencyType)))
@@ -229,6 +262,54 @@ public sealed class SceneDependencyGraphWindow : EditorWindow
         splitCenterRight.Add(CreateRightPane());
 
         rootVisualElement.Add(splitHorizontal);
+    }
+
+
+    private void UpdateNodeGraphProcessorStatus()
+    {
+        if (_nodeGraphProcessorStatusLabel == null)
+        {
+            return;
+        }
+
+        var status = _nodeGraphProcessorApi == null || !_nodeGraphProcessorApi.IsAvailable
+            ? "NGP: Not Installed"
+            : $"NGP: {_nodeGraphProcessorApi.DisplayVersion}";
+        _nodeGraphProcessorStatusLabel.text = status;
+    }
+
+    private void CreateNodeGraphProcessorAsset()
+    {
+        if (_nodeGraphProcessorApi == null || !_nodeGraphProcessorApi.IsAvailable)
+        {
+            EditorUtility.DisplayDialog(
+                "NodeGraphProcessor Not Found",
+                "Install com.alelievr.node-graph-processor in your project to create NodeGraphProcessor graph assets.",
+                "OK");
+            return;
+        }
+
+        var path = EditorUtility.SaveFilePanelInProject(
+            "Create NodeGraphProcessor Graph",
+            "SceneDependencyGraph",
+            "asset",
+            "Select a destination for the NodeGraphProcessor graph asset.");
+
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return;
+        }
+
+        if (_nodeGraphProcessorApi.TryCreateGraphAsset(path))
+        {
+            UpdateNodeGraphProcessorStatus();
+            return;
+        }
+
+        EditorUtility.DisplayDialog(
+            "Unsupported NodeGraphProcessor Version",
+            "Could not create a BaseGraph asset. The installed NodeGraphProcessor version may require a custom graph type.",
+            "OK");
     }
 
     private VisualElement CreateLeftPane()
@@ -302,16 +383,56 @@ public sealed class SceneDependencyGraphWindow : EditorWindow
             return;
         }
 
-        _detailsLabel.text = $"Name: {node.DisplayName}\nType: {TypeUtility.GetFriendlyTypeName(node.Owner?.GetType())}";
+        _detailsLabel.text = BuildNodeDetailsText(node);
 
         if (_nodeColorField != null)
         {
             _nodeColorField.SetValueWithoutNotify(GetNodeDisplayColor(node));
         }
+
         if (node.Owner is UnityEngine.Object unityObject)
         {
             Selection.activeObject = unityObject;
         }
+    }
+
+    private string BuildNodeDetailsText(DependencyNode node)
+    {
+        var typeName = TypeUtility.GetFriendlyTypeName(node.Owner?.GetType());
+        var lines = new List<string>
+        {
+            $"Name: {node.DisplayName}",
+            $"Type: {typeName}",
+        };
+
+        if (node.FieldSlots.Count > 0)
+        {
+            lines.Add("\nFields:");
+            foreach (var slot in node.FieldSlots.OrderBy(slot => slot.Name, StringComparer.OrdinalIgnoreCase))
+            {
+                if (slot == null)
+                {
+                    continue;
+                }
+
+                var direction = slot.IsOutput ? "OUT" : "IN";
+                var state = slot.HasValue ? "filled" : "empty";
+                var summary = string.IsNullOrWhiteSpace(slot.ValueSummary) ? string.Empty : $" ({slot.ValueSummary})";
+                lines.Add($"- {direction} {slot.Name}: {state}{summary}");
+            }
+        }
+
+        var outgoingEdges = _model?.Edges?.Where(edge => edge.From == node).ToList() ?? new List<DependencyEdge>();
+        if (outgoingEdges.Count > 0)
+        {
+            lines.Add("\nReferences:");
+            foreach (var edge in outgoingEdges.OrderBy(edge => edge.FieldName, StringComparer.OrdinalIgnoreCase))
+            {
+                lines.Add($"- {edge.FieldName} -> {edge.To.DisplayName}");
+            }
+        }
+
+        return string.Join("\n", lines);
     }
 
     private void ShowEdgeDetails(DependencyEdge edge)

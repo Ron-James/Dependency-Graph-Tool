@@ -48,6 +48,38 @@ public sealed class SceneScanner
     }
 }
 
+internal static class DependencyFieldSlotUtility
+{
+    public static void Upsert(
+        DependencyNode node,
+        string name,
+        bool isOutput,
+        bool hasValue,
+        bool isUnityEvent,
+        string valueSummary)
+    {
+        if (node == null || string.IsNullOrWhiteSpace(name))
+        {
+            return;
+        }
+
+        var slot = node.FieldSlots.Find(existing => string.Equals(existing.Name, name, StringComparison.Ordinal));
+        if (slot == null)
+        {
+            slot = new DependencyFieldSlot { Name = name };
+            node.FieldSlots.Add(slot);
+        }
+
+        slot.IsOutput |= isOutput;
+        slot.HasValue |= hasValue;
+        slot.IsUnityEvent |= isUnityEvent;
+        if (!string.IsNullOrWhiteSpace(valueSummary))
+        {
+            slot.ValueSummary = valueSummary;
+        }
+    }
+}
+
 internal sealed class UnityEventScanner
 {
     private static string SafeMethodName(string methodName)
@@ -97,6 +129,8 @@ internal sealed class UnityEventScanner
     public void Scan(Component component, List<DependencyEdge> edges, DependencyNodeRegistry registry)
     {
         var fields = TypeUtility.GetAllInstanceFields(component.GetType());
+        var fromNode = registry.GetOrCreateNode(component);
+
         foreach (var field in fields)
         {
             if (!typeof(UnityEventBase).IsAssignableFrom(field.FieldType))
@@ -110,8 +144,15 @@ internal sealed class UnityEventScanner
                 continue;
             }
 
-            var fromNode = registry.GetOrCreateNode(component);
             var listenerCount = eventValue.GetPersistentEventCount();
+            DependencyFieldSlotUtility.Upsert(
+                fromNode,
+                field.Name,
+                isOutput: true,
+                hasValue: listenerCount > 0,
+                isUnityEvent: true,
+                valueSummary: listenerCount == 0 ? "No listeners" : $"{listenerCount} listener(s)");
+
             for (var listenerIndex = 0; listenerIndex < listenerCount; listenerIndex++)
             {
                 var target = eventValue.GetPersistentTarget(listenerIndex);
@@ -180,6 +221,14 @@ internal sealed class SerializedFieldScanner
             }
 
             var value = field.GetValue(component);
+            DependencyFieldSlotUtility.Upsert(
+                ownerNode,
+                field.Name,
+                isOutput: true,
+                hasValue: value != null,
+                isUnityEvent: typeof(UnityEventBase).IsAssignableFrom(field.FieldType),
+                valueSummary: DescribeSerializedValue(value));
+
             if (value == null)
             {
                 continue;
@@ -212,6 +261,28 @@ internal sealed class SerializedFieldScanner
 
             managedObjectScanner.ScanManagedField(component, ownerNode, field, value, edges, registry);
         }
+    }
+
+    private static string DescribeSerializedValue(object value)
+    {
+        if (value == null)
+        {
+            return "Empty";
+        }
+
+        if (value is UnityEngine.Object unityObject)
+        {
+            return unityObject != null
+                ? $"{unityObject.name} ({TypeUtility.GetFriendlyTypeName(unityObject.GetType())})"
+                : "Missing Unity Object";
+        }
+
+        if (value is UnityEventBase unityEvent)
+        {
+            return $"{unityEvent.GetPersistentEventCount()} listener(s)";
+        }
+
+        return TypeUtility.GetFriendlyTypeName(value.GetType());
     }
 }
 
