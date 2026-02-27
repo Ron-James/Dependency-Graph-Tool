@@ -17,6 +17,17 @@ public class DependencyNode
     public string GUID;
     public object Owner;
     public string DisplayName;
+    public readonly List<DependencyFieldSlot> FieldSlots = new();
+}
+
+[Serializable]
+public class DependencyFieldSlot
+{
+    public string Name;
+    public bool IsOutput;
+    public bool HasValue;
+    public bool IsUnityEvent;
+    public string ValueSummary;
 }
 
 [Serializable]
