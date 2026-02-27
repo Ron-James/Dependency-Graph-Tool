@@ -8,6 +8,7 @@ using UnityEditor.UIElements;
 using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.UIElements;
+using UnityEngine.SceneManagement;
 
 public sealed class SceneDependencyGraphWindow : EditorWindow
 {
@@ -15,6 +16,7 @@ public sealed class SceneDependencyGraphWindow : EditorWindow
     private sealed class HiddenNodeState
     {
         public List<string> HiddenNodeGuids = new();
+        public List<string> KnownNodeGuids = new();
     }
 
     private const string HiddenNodePrefsPrefix = "SceneDependencyGraph.HiddenNodes";
@@ -80,7 +82,7 @@ public sealed class SceneDependencyGraphWindow : EditorWindow
     private const float MaximumNodeIconSize = 32f;
 
     private SceneGraphView _graphView;
-    private ListView _hierarchyList;
+    private ScrollView _hierarchyScrollView;
     private TextField _searchField;
     private Label _detailsLabel;
     private ObjectField _reassignField;
@@ -99,6 +101,8 @@ public sealed class SceneDependencyGraphWindow : EditorWindow
     private DependencyType? _currentFilter;
     private DependencyModel _model;
     private readonly HashSet<string> _hiddenNodeGuids = new();
+    private readonly HashSet<string> _knownNodeGuids = new();
+    private readonly HashSet<string> _expandedHierarchyGroups = new();
     private readonly Dictionary<string, Color> _nodeTypeColorOverrides = new();
     private readonly Dictionary<string, Rect> _savedNodePositions = new();
     private readonly Dictionary<string, Color> _nodeColorOverrides = new();
@@ -235,71 +239,17 @@ public sealed class SceneDependencyGraphWindow : EditorWindow
         _searchField.RegisterValueChangedCallback(_ => RebuildHierarchyList());
         pane.Add(_searchField);
 
-        _hierarchyList = new ListView
-        {
-            style = { flexGrow = 1 },
-            makeItem = () =>
-            {
-                var row = new VisualElement();
-                row.style.flexDirection = FlexDirection.Row;
-                row.style.alignItems = Align.Center;
-                row.style.width = Length.Percent(100);
-                row.style.marginRight = 6f;
+        var visibilityToolbar = new VisualElement();
+        visibilityToolbar.style.flexDirection = FlexDirection.Row;
 
-                var nameLabel = new Label { name = "node-name" };
-                nameLabel.style.flexGrow = 1;
-                nameLabel.style.flexShrink = 1;
-                nameLabel.style.minWidth = 0f;
-                nameLabel.style.overflow = Overflow.Hidden;
-                nameLabel.style.whiteSpace = WhiteSpace.NoWrap;
-                nameLabel.style.textOverflow = TextOverflow.Ellipsis;
-                row.Add(nameLabel);
+        var showAllButton = new Button(() => SetVisibilityForFilteredNodes(true)) { text = "Show Filtered" };
+        var hideAllButton = new Button(() => SetVisibilityForFilteredNodes(false)) { text = "Hide Filtered" };
+        visibilityToolbar.Add(showAllButton);
+        visibilityToolbar.Add(hideAllButton);
+        pane.Add(visibilityToolbar);
 
-                var visibilityButton = new Button { name = "visibility-button" };
-                visibilityButton.style.width = 56f;
-                visibilityButton.style.flexShrink = 0;
-                visibilityButton.style.unityTextAlign = TextAnchor.MiddleCenter;
-                visibilityButton.clicked += () =>
-                {
-                    if (visibilityButton.userData is DependencyNode node)
-                    {
-                        ToggleNodeVisibility(node);
-                    }
-                };
-                row.Add(visibilityButton);
-
-                return row;
-            },
-            bindItem = (element, index) =>
-            {
-                var node = (DependencyNode)_hierarchyList.itemsSource[index];
-
-                var label = element.Q<Label>("node-name");
-                var visibilityButton = element.Q<Button>("visibility-button");
-                var isHidden = _hiddenNodeGuids.Contains(node.GUID);
-
-                label.text = isHidden ? $"{node.DisplayName} (hidden)" : node.DisplayName;
-                visibilityButton.text = isHidden ? "Show" : "Hide";
-                visibilityButton.userData = node;
-            },
-            selectionType = SelectionType.Single,
-        };
-
-        _hierarchyList.onSelectionChange += selectedItems =>
-        {
-            foreach (var selectedItem in selectedItems)
-            {
-                if (selectedItem is not DependencyNode selectedNode)
-                {
-                    continue;
-                }
-
-                _graphView?.FocusNode(selectedNode);
-                break;
-            }
-        };
-
-        pane.Add(_hierarchyList);
+        _hierarchyScrollView = new ScrollView { style = { flexGrow = 1 } };
+        pane.Add(_hierarchyScrollView);
         return pane;
     }
 
@@ -471,33 +421,278 @@ public sealed class SceneDependencyGraphWindow : EditorWindow
 
     private void RebuildHierarchyList()
     {
+        if (_model == null || _hierarchyScrollView == null)
+        {
+            return;
+        }
+
+        _hierarchyScrollView.Clear();
+
+        var filteredNodes = GetFilteredNodes();
+
+        var monoBehaviourNodes = new Dictionary<GameObject, List<DependencyNode>>();
+        var scriptableObjectNodes = new List<DependencyNode>();
+        var otherNodes = new List<DependencyNode>();
+
+        foreach (var node in filteredNodes)
+        {
+            if (node?.Owner is MonoBehaviour monoBehaviour && monoBehaviour != null)
+            {
+                if (!monoBehaviourNodes.TryGetValue(monoBehaviour.gameObject, out var gameObjectNodes))
+                {
+                    gameObjectNodes = new List<DependencyNode>();
+                    monoBehaviourNodes[monoBehaviour.gameObject] = gameObjectNodes;
+                }
+
+                gameObjectNodes.Add(node);
+                continue;
+            }
+
+            if (node?.Owner is ScriptableObject)
+            {
+                scriptableObjectNodes.Add(node);
+                continue;
+            }
+
+            otherNodes.Add(node);
+        }
+
+        AddHierarchySection(monoBehaviourNodes);
+        AddNodeSection("Scriptable Objects", "group:scriptable", scriptableObjectNodes);
+        AddNodeSection("Other Nodes", "group:other", otherNodes);
+    }
+
+    private List<DependencyNode> GetFilteredNodes()
+    {
+        var search = _searchField?.value ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(search))
+        {
+            return _model.Nodes;
+        }
+
+        return _model.Nodes.FindAll(node => node.DisplayName.IndexOf(search, StringComparison.OrdinalIgnoreCase) >= 0);
+    }
+
+    private void AddHierarchySection(Dictionary<GameObject, List<DependencyNode>> nodesByGameObject)
+    {
+        var sectionKey = "group:scene-hierarchy";
+        var hierarchyFoldout = CreateFoldout("Scene Hierarchy (MonoBehaviours)", sectionKey, defaultExpanded: true);
+        _hierarchyScrollView.Add(hierarchyFoldout);
+
+        if (nodesByGameObject.Count == 0)
+        {
+            hierarchyFoldout.Add(CreateInfoLabel("No MonoBehaviour nodes in the current filter."));
+            return;
+        }
+
+        var includedTransforms = new HashSet<Transform>();
+        foreach (var gameObject in nodesByGameObject.Keys)
+        {
+            var current = gameObject.transform;
+            while (current != null)
+            {
+                includedTransforms.Add(current);
+                current = current.parent;
+            }
+        }
+
+        var activeScene = SceneManager.GetActiveScene();
+        if (!activeScene.IsValid())
+        {
+            hierarchyFoldout.Add(CreateInfoLabel("Active scene is not valid."));
+            return;
+        }
+
+        foreach (var rootObject in activeScene.GetRootGameObjects())
+        {
+            var branch = BuildGameObjectBranch(rootObject.transform, nodesByGameObject, includedTransforms);
+            if (branch != null)
+            {
+                hierarchyFoldout.Add(branch);
+            }
+        }
+    }
+
+    private VisualElement BuildGameObjectBranch(
+        Transform transform,
+        Dictionary<GameObject, List<DependencyNode>> nodesByGameObject,
+        HashSet<Transform> includedTransforms)
+    {
+        if (transform == null || !includedTransforms.Contains(transform))
+        {
+            return null;
+        }
+
+        var foldout = CreateFoldout(transform.name, $"go:{GetTransformPath(transform)}", defaultExpanded: false);
+
+        if (nodesByGameObject.TryGetValue(transform.gameObject, out var nodesOnGameObject))
+        {
+            foreach (var node in nodesOnGameObject.OrderBy(node => node.DisplayName))
+            {
+                foldout.Add(CreateNodeRow(node));
+            }
+        }
+
+        for (var childIndex = 0; childIndex < transform.childCount; childIndex++)
+        {
+            var childBranch = BuildGameObjectBranch(transform.GetChild(childIndex), nodesByGameObject, includedTransforms);
+            if (childBranch != null)
+            {
+                foldout.Add(childBranch);
+            }
+        }
+
+        return foldout;
+    }
+
+    private void AddNodeSection(string title, string sectionKey, List<DependencyNode> nodes)
+    {
+        var foldout = CreateFoldout(title, sectionKey, defaultExpanded: true);
+        _hierarchyScrollView.Add(foldout);
+
+        if (nodes.Count == 0)
+        {
+            foldout.Add(CreateInfoLabel("No nodes in the current filter."));
+            return;
+        }
+
+        foreach (var node in nodes.OrderBy(node => node.DisplayName))
+        {
+            foldout.Add(CreateNodeRow(node));
+        }
+    }
+
+    private Foldout CreateFoldout(string title, string groupKey, bool defaultExpanded)
+    {
+        var isExpanded = _expandedHierarchyGroups.Contains(groupKey) || defaultExpanded;
+        var foldout = new Foldout
+        {
+            text = title,
+            value = isExpanded,
+        };
+
+        if (foldout.value)
+        {
+            _expandedHierarchyGroups.Add(groupKey);
+        }
+
+        foldout.RegisterValueChangedCallback(evt =>
+        {
+            if (evt.newValue)
+            {
+                _expandedHierarchyGroups.Add(groupKey);
+            }
+            else
+            {
+                _expandedHierarchyGroups.Remove(groupKey);
+            }
+        });
+
+        return foldout;
+    }
+
+    private static string GetTransformPath(Transform transform)
+    {
+        var names = new List<string>();
+        var current = transform;
+        while (current != null)
+        {
+            names.Add(current.name);
+            current = current.parent;
+        }
+
+        names.Reverse();
+        return string.Join("/", names);
+    }
+
+    private VisualElement CreateNodeRow(DependencyNode node)
+    {
+        var row = new VisualElement();
+        row.style.flexDirection = FlexDirection.Row;
+        row.style.alignItems = Align.Center;
+        row.style.width = Length.Percent(100);
+        row.style.marginRight = 6f;
+
+        var nameButton = new Button(() => _graphView?.FocusNode(node))
+        {
+            text = _hiddenNodeGuids.Contains(node.GUID) ? $"{node.DisplayName} (hidden)" : node.DisplayName,
+        };
+        nameButton.style.flexGrow = 1;
+        nameButton.style.unityTextAlign = TextAnchor.MiddleLeft;
+        row.Add(nameButton);
+
+        var visibilityButton = new Button(() => ToggleNodeVisibility(node))
+        {
+            text = _hiddenNodeGuids.Contains(node.GUID) ? "Show" : "Hide",
+        };
+        visibilityButton.style.width = 56f;
+        visibilityButton.style.flexShrink = 0;
+        visibilityButton.style.unityTextAlign = TextAnchor.MiddleCenter;
+        row.Add(visibilityButton);
+
+        return row;
+    }
+
+    private static Label CreateInfoLabel(string message)
+    {
+        return new Label(message)
+        {
+            style =
+            {
+                unityFontStyleAndWeight = FontStyle.Italic,
+                whiteSpace = WhiteSpace.Normal,
+            },
+        };
+    }
+
+    private void SetVisibilityForFilteredNodes(bool showNodes)
+    {
         if (_model == null)
         {
             return;
         }
 
-        var search = _searchField?.value ?? string.Empty;
-        var filtered = string.IsNullOrWhiteSpace(search)
-            ? _model.Nodes
-            : _model.Nodes.FindAll(n => n.DisplayName.IndexOf(search, StringComparison.OrdinalIgnoreCase) >= 0);
+        foreach (var node in GetFilteredNodes())
+        {
+            if (string.IsNullOrWhiteSpace(node.GUID))
+            {
+                continue;
+            }
 
-        _hierarchyList.itemsSource = filtered;
-        _hierarchyList.Rebuild();
+            _knownNodeGuids.Add(node.GUID);
+            if (showNodes)
+            {
+                _hiddenNodeGuids.Remove(node.GUID);
+            }
+            else
+            {
+                _hiddenNodeGuids.Add(node.GUID);
+            }
+        }
+
+        SaveHiddenNodePreferences();
+        RebuildHierarchyList();
+        RedrawGraphOnly();
     }
 
     private void LoadHiddenNodePreferences()
     {
         _hiddenNodeGuids.Clear();
+        _knownNodeGuids.Clear();
 
         var rawJson = EditorPrefs.GetString(GetHiddenNodePrefsKey(), string.Empty);
         if (string.IsNullOrWhiteSpace(rawJson))
         {
+            HideAllCurrentNodesAsDefault();
+            SaveHiddenNodePreferences();
             return;
         }
 
         var savedState = JsonUtility.FromJson<HiddenNodeState>(rawJson);
         if (savedState?.HiddenNodeGuids == null)
         {
+            HideAllCurrentNodesAsDefault();
+            SaveHiddenNodePreferences();
             return;
         }
 
@@ -508,6 +703,62 @@ public sealed class SceneDependencyGraphWindow : EditorWindow
                 _hiddenNodeGuids.Add(guid);
             }
         }
+
+        var stateHasKnownNodes = savedState.KnownNodeGuids != null && savedState.KnownNodeGuids.Count > 0;
+        if (stateHasKnownNodes)
+        {
+            foreach (var guid in savedState.KnownNodeGuids)
+            {
+                if (!string.IsNullOrWhiteSpace(guid))
+                {
+                    _knownNodeGuids.Add(guid);
+                }
+            }
+        }
+        else
+        {
+            foreach (var node in _model.Nodes)
+            {
+                if (!string.IsNullOrWhiteSpace(node.GUID))
+                {
+                    _knownNodeGuids.Add(node.GUID);
+                }
+            }
+        }
+
+        var discoveredNewNode = false;
+        foreach (var node in _model.Nodes)
+        {
+            if (string.IsNullOrWhiteSpace(node.GUID))
+            {
+                continue;
+            }
+
+            if (_knownNodeGuids.Add(node.GUID))
+            {
+                _hiddenNodeGuids.Add(node.GUID);
+                discoveredNewNode = true;
+            }
+        }
+
+        if (discoveredNewNode)
+        {
+            SaveHiddenNodePreferences();
+        }
+    }
+
+    private void HideAllCurrentNodesAsDefault()
+    {
+        foreach (var node in _model.Nodes)
+        {
+            if (string.IsNullOrWhiteSpace(node.GUID))
+            {
+                continue;
+            }
+
+            _hiddenNodeGuids.Add(node.GUID);
+            _knownNodeGuids.Add(node.GUID);
+        }
     }
 
     private void SaveHiddenNodePreferences()
@@ -515,6 +766,7 @@ public sealed class SceneDependencyGraphWindow : EditorWindow
         var state = new HiddenNodeState
         {
             HiddenNodeGuids = _hiddenNodeGuids.ToList(),
+            KnownNodeGuids = _knownNodeGuids.ToList(),
         };
 
         var json = JsonUtility.ToJson(state);
@@ -540,6 +792,8 @@ public sealed class SceneDependencyGraphWindow : EditorWindow
             return;
         }
 
+        _knownNodeGuids.Add(node.GUID);
+
         if (_hiddenNodeGuids.Contains(node.GUID))
         {
             _hiddenNodeGuids.Remove(node.GUID);
@@ -553,6 +807,7 @@ public sealed class SceneDependencyGraphWindow : EditorWindow
         RebuildHierarchyList();
         RedrawGraphOnly();
     }
+
 
 
     private void ApplyColorToSelectedNode(Color color)
