@@ -6,9 +6,10 @@ internal static class GraphNamingUtility
 {
     public static string BuildNodeDisplayName(object owner, string fallbackName)
     {
-        if (owner is INamedEntry named && !string.IsNullOrWhiteSpace(named.Name))
+        if (owner is IDependencyGraphNodeNameProvider customNameProvider &&
+            !string.IsNullOrWhiteSpace(customNameProvider.DependencyGraphNodeName))
         {
-            return $"{named.Name} ({TypeUtility.GetFriendlyTypeName(owner.GetType())})";
+            return $"{customNameProvider.DependencyGraphNodeName} ({TypeUtility.GetFriendlyTypeName(owner.GetType())})";
         }
 
         return fallbackName;
@@ -16,9 +17,10 @@ internal static class GraphNamingUtility
 
     public static string BuildCollectionItemLabel(string memberPath, int index, object item)
     {
-        if (item is INamedEntry named && !string.IsNullOrWhiteSpace(named.Name))
+        if (item is IDependencyGraphNodeNameProvider customNameProvider &&
+            !string.IsNullOrWhiteSpace(customNameProvider.DependencyGraphNodeName))
         {
-            return $"{memberPath}[{named.Name}]";
+            return $"{memberPath}[{customNameProvider.DependencyGraphNodeName}]";
         }
 
         return $"{memberPath}[{index}]";
