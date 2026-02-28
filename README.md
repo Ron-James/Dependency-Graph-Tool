@@ -75,3 +75,15 @@ Example `Packages/manifest.json` snippet:
 If you publish NodeGraphProcessor to a registry (for example OpenUPM), then this package can depend on it via normal `package.json` versioned dependency.
 
 For a full integration decision matrix (registry vs Git vs vendored copy), see [Documentation~/NODE_GRAPH_PROCESSOR_DEPENDENCY_SETUP.md](Documentation~/NODE_GRAPH_PROCESSOR_DEPENDENCY_SETUP.md).
+
+### Using the vendored copy in this repository
+
+This repo includes a copy of NodeGraphProcessor at `Packages/com.alelievr.node-graph-processor/NodeGraphProcessor-1.3.0`.
+For the sample Unity project under `Graph-Tool~`, reference that folder in `Graph-Tool~/Packages/manifest.json` with:
+
+```json
+"com.alelievr.node-graph-processor": "file:../../Packages/com.alelievr.node-graph-processor/NodeGraphProcessor-1.3.0"
+```
+
+No extra files are required in `Graph-Tool~/Packages/` as long as the copied package folder contains its own `package.json` (which it does).
+
