@@ -1,4 +1,4 @@
-#if HAS_NODE_GRAPH_PROCESSOR
+
 using System;
 using System.Collections.Generic;
 using GraphProcessor;
@@ -196,4 +196,4 @@ namespace RonJames.DependencyGraphTool.NodeGraphProcessorIntegration
         }
     }
 }
-#endif
+
