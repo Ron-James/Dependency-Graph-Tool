@@ -1,4 +1,4 @@
-#if HAS_NODE_GRAPH_PROCESSOR
+
 using GraphProcessor;
 using UnityEngine;
 
@@ -60,4 +60,4 @@ namespace RonJames.DependencyGraphTool.NodeGraphProcessorIntegration
         public override DependencyGraphNodeKind Kind => DependencyGraphNodeKind.ManagedObject;
     }
 }
-#endif
+
