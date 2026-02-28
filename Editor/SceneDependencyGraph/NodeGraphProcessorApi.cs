@@ -14,12 +14,21 @@ namespace RonJames.DependencyGraphTool
 
         private readonly Type _baseGraphWindowType;
         private readonly Type _baseGraphType;
+        private readonly Type _concreteGraphWindowType;
+        private readonly Type _concreteGraphType;
         private readonly Assembly _graphProcessorAssembly;
 
-        private NodeGraphProcessorApi(Type baseGraphWindowType, Type baseGraphType, Assembly graphProcessorAssembly)
+        private NodeGraphProcessorApi(
+            Type baseGraphWindowType,
+            Type baseGraphType,
+            Type concreteGraphWindowType,
+            Type concreteGraphType,
+            Assembly graphProcessorAssembly)
         {
             _baseGraphWindowType = baseGraphWindowType;
             _baseGraphType = baseGraphType;
+            _concreteGraphWindowType = concreteGraphWindowType;
+            _concreteGraphType = concreteGraphType;
             _graphProcessorAssembly = graphProcessorAssembly;
         }
 
@@ -35,7 +44,15 @@ namespace RonJames.DependencyGraphTool
                 .FirstOrDefault(type => type != null);
 
             var graphProcessorAssembly = baseGraphWindowType?.Assembly ?? baseGraphType?.Assembly;
-            return new NodeGraphProcessorApi(baseGraphWindowType, baseGraphType, graphProcessorAssembly);
+            var concreteGraphWindowType = FindConcreteSubclass(baseGraphWindowType, graphProcessorAssembly);
+            var concreteGraphType = FindConcreteSubclass(baseGraphType, graphProcessorAssembly);
+
+            return new NodeGraphProcessorApi(
+                baseGraphWindowType,
+                baseGraphType,
+                concreteGraphWindowType,
+                concreteGraphType,
+                graphProcessorAssembly);
         }
 
         public bool IsAvailable => _baseGraphWindowType != null || _baseGraphType != null;
@@ -56,29 +73,89 @@ namespace RonJames.DependencyGraphTool
 
         public bool TryOpenGraphWindow()
         {
-            if (_baseGraphWindowType == null)
+            if (_concreteGraphWindowType == null)
             {
                 return false;
             }
 
-            EditorWindow.GetWindow(_baseGraphWindowType);
+            EditorWindow.GetWindow(_concreteGraphWindowType);
             return true;
         }
 
         public bool TryCreateGraphAsset(string path)
         {
-            if (_baseGraphType == null || _baseGraphType.IsAbstract)
+            if (_concreteGraphType == null)
             {
                 return false;
             }
 
-            var graphAsset = ScriptableObject.CreateInstance(_baseGraphType);
+            var graphAsset = ScriptableObject.CreateInstance(_concreteGraphType);
             AssetDatabase.CreateAsset(graphAsset, path);
             EditorUtility.SetDirty(graphAsset);
             AssetDatabase.SaveAssets();
             EditorGUIUtility.PingObject(graphAsset);
             Selection.activeObject = graphAsset;
             return true;
+        }
+
+        private static Type FindConcreteSubclass(Type baseType, Assembly preferredAssembly)
+        {
+            if (baseType == null)
+            {
+                return null;
+            }
+
+            if (!baseType.IsAbstract)
+            {
+                return baseType;
+            }
+
+            var assemblies = AppDomain.CurrentDomain.GetAssemblies();
+            var typesInPreferredAssembly = preferredAssembly == null
+                ? Array.Empty<Type>()
+                : GetLoadableTypes(preferredAssembly);
+
+            var matchingType = typesInPreferredAssembly.FirstOrDefault(type =>
+                baseType.IsAssignableFrom(type) &&
+                !type.IsAbstract &&
+                !type.IsGenericTypeDefinition);
+
+            if (matchingType != null)
+            {
+                return matchingType;
+            }
+
+            foreach (var assembly in assemblies)
+            {
+                if (assembly == preferredAssembly)
+                {
+                    continue;
+                }
+
+                matchingType = GetLoadableTypes(assembly).FirstOrDefault(type =>
+                    baseType.IsAssignableFrom(type) &&
+                    !type.IsAbstract &&
+                    !type.IsGenericTypeDefinition);
+
+                if (matchingType != null)
+                {
+                    return matchingType;
+                }
+            }
+
+            return null;
+        }
+
+        private static Type[] GetLoadableTypes(Assembly assembly)
+        {
+            try
+            {
+                return assembly.GetTypes();
+            }
+            catch (ReflectionTypeLoadException exception)
+            {
+                return exception.Types.Where(type => type != null).ToArray();
+            }
         }
     }
 }
