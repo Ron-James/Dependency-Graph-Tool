@@ -78,12 +78,38 @@ For a full integration decision matrix (registry vs Git vs vendored copy), see [
 
 ### Using the vendored copy in this repository
 
-This repo includes a copy of NodeGraphProcessor at `Packages/com.alelievr.node-graph-processor/NodeGraphProcessor-1.3.0`.
+This repo includes a copy of NodeGraphProcessor at `Packages/com.alelievr.node-graph-processor`.
 For the sample Unity project under `Graph-Tool~`, reference that folder in `Graph-Tool~/Packages/manifest.json` with:
 
 ```json
-"com.alelievr.node-graph-processor": "file:../../Packages/com.alelievr.node-graph-processor/NodeGraphProcessor-1.3.0"
+"com.alelievr.node-graph-processor": "file:../../Packages/com.alelievr.node-graph-processor"
 ```
 
 No extra files are required in `Graph-Tool~/Packages/` as long as the copied package folder contains its own `package.json` (which it does).
 
+### Consumer project file-structure checklist
+
+If files were pushed but do not appear in the Unity consumer project, verify one of these two supported layouts:
+
+1. **Direct package folder in the consumer project's `Packages/` directory**
+
+   ```text
+   YourConsumerProject/
+   └── Packages/
+       └── com.alelievr.node-graph-processor/
+           ├── package.json
+           ├── Editor/
+           └── Runtime/
+   ```
+
+   In this layout, Unity discovers the package automatically.
+
+2. **External folder referenced via `file:` in consumer `Packages/manifest.json`**
+
+   ```json
+   "com.alelievr.node-graph-processor": "file:../relative/path/to/com.alelievr.node-graph-processor"
+   ```
+
+   In this layout, Unity discovers the package only through the `file:` entry.
+
+Important: the folder you reference must have `package.json` at its root. In this repository, the correct root is `Packages/com.alelievr.node-graph-processor`.
