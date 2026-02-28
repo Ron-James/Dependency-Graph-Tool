@@ -5,106 +5,108 @@ using System.Reflection;
 using UnityEngine;
 using UnityEngine.Events;
 
-namespace RonJames.DependencyGraphTool;
 
-internal static class TypeUtility
+namespace RonJames.DependencyGraphTool
 {
-    private const string OdinSerializeAttributeName = "Sirenix.Serialization.OdinSerializeAttribute";
-
-    public static IEnumerable<FieldInfo> GetAllInstanceFields(Type type)
+    internal static class TypeUtility
     {
-        const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-        for (var current = type; current != null; current = current.BaseType)
+        private const string OdinSerializeAttributeName = "Sirenix.Serialization.OdinSerializeAttribute";
+
+        public static IEnumerable<FieldInfo> GetAllInstanceFields(Type type)
         {
-            foreach (var field in current.GetFields(flags | BindingFlags.DeclaredOnly))
+            const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+            for (var current = type; current != null; current = current.BaseType)
             {
-                yield return field;
+                foreach (var field in current.GetFields(flags | BindingFlags.DeclaredOnly))
+                {
+                    yield return field;
+                }
             }
         }
-    }
 
-    public static bool IsSerializedField(FieldInfo field)
-    {
-        if (field.IsStatic || field.IsLiteral || field.IsInitOnly || field.IsNotSerialized)
+        public static bool IsSerializedField(FieldInfo field)
         {
-            return false;
+            if (field.IsStatic || field.IsLiteral || field.IsInitOnly || field.IsNotSerialized)
+            {
+                return false;
+            }
+
+            return field.IsPublic ||
+                   field.GetCustomAttribute<SerializeField>() != null ||
+                   HasSerializeReferenceAttribute(field) ||
+                   HasOdinSerializeAttribute(field);
         }
 
-        return field.IsPublic ||
-               field.GetCustomAttribute<SerializeField>() != null ||
-               HasSerializeReferenceAttribute(field) ||
-               HasOdinSerializeAttribute(field);
-    }
-
-    public static bool HasSerializeReferenceAttribute(FieldInfo field)
-    {
-        return field.GetCustomAttribute<SerializeReference>() != null;
-    }
-
-    public static bool HasOdinSerializeAttribute(FieldInfo field)
-    {
-        return field.CustomAttributes.Any(a => a.AttributeType.FullName == OdinSerializeAttributeName);
-    }
-
-    public static bool CanParticipateInManagedScan(FieldInfo field)
-    {
-        return !field.IsStatic && !field.IsLiteral && !field.IsInitOnly && !field.IsNotSerialized;
-    }
-
-    public static bool IsTerminalType(Type type)
-    {
-        return type.IsPrimitive || type.IsEnum || type == typeof(string) || type == typeof(decimal);
-    }
-
-    public static bool ShouldSkipManagedGraphNode(Type type)
-    {
-        if (typeof(UnityEventBase).IsAssignableFrom(type))
+        public static bool HasSerializeReferenceAttribute(FieldInfo field)
         {
-            return true;
+            return field.GetCustomAttribute<SerializeReference>() != null;
         }
 
-        var ns = type.Namespace ?? string.Empty;
-        return ns.StartsWith("UnityEngine.Events", StringComparison.Ordinal) ||
-               ns.StartsWith("System.Reflection", StringComparison.Ordinal);
-    }
-
-    public static DependencyType ParseCustomDependencyType(string dependencyKind)
-    {
-        if (string.IsNullOrWhiteSpace(dependencyKind))
+        public static bool HasOdinSerializeAttribute(FieldInfo field)
         {
-            return DependencyType.SerializedUnityRef;
+            return field.CustomAttributes.Any(a => a.AttributeType.FullName == OdinSerializeAttributeName);
         }
 
-        return Enum.TryParse(dependencyKind.Trim(), ignoreCase: true, out DependencyType parsedType)
-            ? parsedType
-            : DependencyType.SerializedUnityRef;
-    }
-
-    public static string GetFriendlyTypeName(Type type)
-    {
-        if (type == null)
+        public static bool CanParticipateInManagedScan(FieldInfo field)
         {
-            return "null";
+            return !field.IsStatic && !field.IsLiteral && !field.IsInitOnly && !field.IsNotSerialized;
         }
 
-        if (type.IsArray)
+        public static bool IsTerminalType(Type type)
         {
-            return $"{GetFriendlyTypeName(type.GetElementType())}[]";
+            return type.IsPrimitive || type.IsEnum || type == typeof(string) || type == typeof(decimal);
         }
 
-        if (!type.IsGenericType)
+        public static bool ShouldSkipManagedGraphNode(Type type)
         {
-            return type.Name;
+            if (typeof(UnityEventBase).IsAssignableFrom(type))
+            {
+                return true;
+            }
+
+            var ns = type.Namespace ?? string.Empty;
+            return ns.StartsWith("UnityEngine.Events", StringComparison.Ordinal) ||
+                   ns.StartsWith("System.Reflection", StringComparison.Ordinal);
         }
 
-        var baseName = type.Name;
-        var tickIndex = baseName.IndexOf('`');
-        if (tickIndex > 0)
+        public static DependencyType ParseCustomDependencyType(string dependencyKind)
         {
-            baseName = baseName.Substring(0, tickIndex);
+            if (string.IsNullOrWhiteSpace(dependencyKind))
+            {
+                return DependencyType.SerializedUnityRef;
+            }
+
+            return Enum.TryParse(dependencyKind.Trim(), ignoreCase: true, out DependencyType parsedType)
+                ? parsedType
+                : DependencyType.SerializedUnityRef;
         }
 
-        var genericArguments = type.GetGenericArguments().Select(GetFriendlyTypeName);
-        return $"{baseName}<{string.Join(", ", genericArguments)}>";
+        public static string GetFriendlyTypeName(Type type)
+        {
+            if (type == null)
+            {
+                return "null";
+            }
+
+            if (type.IsArray)
+            {
+                return $"{GetFriendlyTypeName(type.GetElementType())}[]";
+            }
+
+            if (!type.IsGenericType)
+            {
+                return type.Name;
+            }
+
+            var baseName = type.Name;
+            var tickIndex = baseName.IndexOf('`');
+            if (tickIndex > 0)
+            {
+                baseName = baseName.Substring(0, tickIndex);
+            }
+
+            var genericArguments = type.GetGenericArguments().Select(GetFriendlyTypeName);
+            return $"{baseName}<{string.Join(", ", genericArguments)}>";
+        }
     }
 }

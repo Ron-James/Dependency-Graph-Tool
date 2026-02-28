@@ -2,106 +2,108 @@ using System;
 using System.Linq;
 using UnityEngine;
 
-namespace RonJames.DependencyGraphTool;
 
-internal static class DependencyGraphAdapterBuilder
+namespace RonJames.DependencyGraphTool
 {
-    public static DependencyGraphAdapterModel Build(DependencyModel model)
+    internal static class DependencyGraphAdapterBuilder
     {
-        var adapted = new DependencyGraphAdapterModel();
-        if (model == null)
+        public static DependencyGraphAdapterModel Build(DependencyModel model)
         {
-            return adapted;
-        }
-
-        foreach (var node in model.Nodes)
-        {
-            if (node == null)
+            var adapted = new DependencyGraphAdapterModel();
+            if (model == null)
             {
-                continue;
+                return adapted;
             }
 
-            var adaptedNode = new DependencyGraphAdapterNode
+            foreach (var node in model.Nodes)
             {
-                Id = node.GUID,
-                DisplayName = node.DisplayName,
-                TypeName = TypeUtility.GetFriendlyTypeName(node.Owner?.GetType()),
-                UnityObjectPath = GetUnityObjectPath(node.Owner as UnityEngine.Object),
-            };
-
-            foreach (var field in node.FieldSlots.OrderBy(field => field.Name, StringComparer.OrdinalIgnoreCase))
-            {
-                if (field == null)
+                if (node == null)
                 {
                     continue;
                 }
 
-                adaptedNode.Fields.Add(new DependencyGraphAdapterField
+                var adaptedNode = new DependencyGraphAdapterNode
                 {
-                    Name = field.Name,
-                    HasValue = field.HasValue,
-                    ValueSummary = field.ValueSummary,
+                    Id = node.GUID,
+                    DisplayName = node.DisplayName,
+                    TypeName = TypeUtility.GetFriendlyTypeName(node.Owner?.GetType()),
+                    UnityObjectPath = GetUnityObjectPath(node.Owner as UnityEngine.Object),
+                };
+
+                foreach (var field in node.FieldSlots.OrderBy(field => field.Name, StringComparer.OrdinalIgnoreCase))
+                {
+                    if (field == null)
+                    {
+                        continue;
+                    }
+
+                    adaptedNode.Fields.Add(new DependencyGraphAdapterField
+                    {
+                        Name = field.Name,
+                        HasValue = field.HasValue,
+                        ValueSummary = field.ValueSummary,
+                    });
+                }
+
+                adapted.Nodes.Add(adaptedNode);
+            }
+
+            foreach (var edge in model.Edges)
+            {
+                if (edge?.From == null || edge.To == null)
+                {
+                    continue;
+                }
+
+                adapted.Edges.Add(new DependencyGraphAdapterEdge
+                {
+                    FromNodeId = edge.From.GUID,
+                    ToNodeId = edge.To.GUID,
+                    FieldName = edge.FieldName,
+                    DependencyKind = edge.Type.ToString(),
+                    IsBroken = edge.IsBroken,
+                    Details = edge.Details,
                 });
             }
 
-            adapted.Nodes.Add(adaptedNode);
+            return adapted;
         }
 
-        foreach (var edge in model.Edges)
+        private static string GetUnityObjectPath(UnityEngine.Object unityObject)
         {
-            if (edge?.From == null || edge.To == null)
+            if (unityObject == null)
             {
-                continue;
+                return string.Empty;
             }
 
-            adapted.Edges.Add(new DependencyGraphAdapterEdge
+            if (unityObject is Component component)
             {
-                FromNodeId = edge.From.GUID,
-                ToNodeId = edge.To.GUID,
-                FieldName = edge.FieldName,
-                DependencyKind = edge.Type.ToString(),
-                IsBroken = edge.IsBroken,
-                Details = edge.Details,
-            });
+                return component.transform.GetHierarchyPath();
+            }
+
+            if (unityObject is GameObject gameObject)
+            {
+                return gameObject.transform.GetHierarchyPath();
+            }
+
+            return unityObject.name;
         }
 
-        return adapted;
-    }
-
-    private static string GetUnityObjectPath(UnityEngine.Object unityObject)
-    {
-        if (unityObject == null)
+        private static string GetHierarchyPath(this Transform transform)
         {
-            return string.Empty;
+            if (transform == null)
+            {
+                return string.Empty;
+            }
+
+            var path = transform.name;
+            while (transform.parent != null)
+            {
+                transform = transform.parent;
+                path = $"{transform.name}/{path}";
+            }
+
+            return path;
         }
-
-        if (unityObject is Component component)
-        {
-            return component.transform.GetHierarchyPath();
-        }
-
-        if (unityObject is GameObject gameObject)
-        {
-            return gameObject.transform.GetHierarchyPath();
-        }
-
-        return unityObject.name;
-    }
-
-    private static string GetHierarchyPath(this Transform transform)
-    {
-        if (transform == null)
-        {
-            return string.Empty;
-        }
-
-        var path = transform.name;
-        while (transform.parent != null)
-        {
-            transform = transform.parent;
-            path = $"{transform.name}/{path}";
-        }
-
-        return path;
     }
 }
