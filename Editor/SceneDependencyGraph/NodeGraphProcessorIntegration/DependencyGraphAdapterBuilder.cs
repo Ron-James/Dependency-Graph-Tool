@@ -28,6 +28,7 @@ namespace RonJames.DependencyGraphTool
                     DisplayName = node.DisplayName,
                     TypeName = TypeUtility.GetFriendlyTypeName(node.Owner?.GetType()),
                     UnityObjectPath = GetUnityObjectPath(node.Owner as UnityEngine.Object),
+                    NodeKind = GetNodeKind(node.Owner),
                 };
 
                 foreach (var field in node.FieldSlots.OrderBy(field => field.Name, StringComparer.OrdinalIgnoreCase))
@@ -67,6 +68,17 @@ namespace RonJames.DependencyGraphTool
             }
 
             return adapted;
+        }
+
+        private static string GetNodeKind(object owner)
+        {
+            return owner switch
+            {
+                MonoBehaviour => "MonoBehaviour",
+                ScriptableObject => "ScriptableObject",
+                UnityEngine.Object => "UnityObject",
+                _ => "ManagedObject",
+            };
         }
 
         private static string GetUnityObjectPath(UnityEngine.Object unityObject)
