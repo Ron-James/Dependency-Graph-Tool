@@ -5,6 +5,8 @@ using System.Reflection;
 using UnityEngine;
 using UnityEngine.Events;
 
+namespace RonJames.DependencyGraphTool;
+
 internal static class TypeUtility
 {
     private const string OdinSerializeAttributeName = "Sirenix.Serialization.OdinSerializeAttribute";

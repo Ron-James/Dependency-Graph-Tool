@@ -1,6 +1,6 @@
 {
   "name": "DependencyGraphTool.Editor",
-  "rootNamespace": "",
+  "rootNamespace": "RonJames.DependencyGraphTool",
   "references": [
     "DependencyGraphTool.Runtime"
   ],

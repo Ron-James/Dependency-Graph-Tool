@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 
+namespace RonJames.DependencyGraphTool;
+
 [Serializable]
 internal sealed class DependencyGraphAdapterModel
 {

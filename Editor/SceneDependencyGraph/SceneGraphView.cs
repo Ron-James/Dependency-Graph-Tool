@@ -5,6 +5,8 @@ using UnityEditor.Experimental.GraphView;
 using UnityEngine;
 using UnityEngine.UIElements;
 
+namespace RonJames.DependencyGraphTool;
+
 public sealed class SceneGraphView : GraphView
 {
     private const float DefaultHorizontalSpacing = 360f;

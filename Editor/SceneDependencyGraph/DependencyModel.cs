@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Reflection;
 using UnityEngine;
 
+namespace RonJames.DependencyGraphTool;
+
 public enum DependencyType
 {
     UnityEvent,
