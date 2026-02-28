@@ -3,6 +3,7 @@ using System.Linq;
 using System.Reflection;
 using UnityEditor;
 using UnityEditor.PackageManager;
+using PackageManagerPackageInfo = UnityEditor.PackageManager.PackageInfo;
 using UnityEngine;
 
 
@@ -80,7 +81,7 @@ namespace RonJames.DependencyGraphTool
 
         private string TryGetPackageVersion()
         {
-            var packageInfo = PackageInfo.FindForAssembly(_graphProcessorAssembly);
+            var packageInfo = PackageManagerPackageInfo.FindForAssembly(_graphProcessorAssembly);
             return packageInfo?.version;
         }
 
