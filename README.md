@@ -44,6 +44,7 @@ When `com.alelievr.node-graph-processor` is installed in the Unity project, the 
 - **NGP Window**: opens the NodeGraphProcessor window directly.
 - **Create NGP Graph**: creates a `BaseGraph` asset (when supported by the installed version).
 - **NGP status label**: shows whether NodeGraphProcessor is detected.
+- **Dependency node class scaffolding**: adds NodeGraphProcessor `BaseNode`-derived classes for MonoBehaviour, ScriptableObject, and managed-object dependency nodes (compiled only when NodeGraphProcessor is installed).
 
 This keeps your existing dependency graph workflow intact while enabling immediate API-level interoperability when the package is present.
 

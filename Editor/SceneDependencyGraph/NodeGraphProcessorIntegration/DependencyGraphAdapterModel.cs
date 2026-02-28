@@ -18,6 +18,7 @@ namespace RonJames.DependencyGraphTool
         public string DisplayName;
         public string TypeName;
         public string UnityObjectPath;
+        public string NodeKind;
         public List<DependencyGraphAdapterField> Fields = new();
     }
 
