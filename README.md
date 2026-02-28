@@ -2,6 +2,8 @@
 
 Unity editor tool for visualizing scene dependencies as a graph.
 
+> Note: the included sample Unity project is stored under `Graph-Tool~` so Unity Package Manager ignores it when this repository is installed as a package from Git.
+
 ## Install via Unity Package Manager (Git URL)
 
 Use **Add package from git URL...** in the Unity Package Manager and paste:
