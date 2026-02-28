@@ -2,51 +2,17 @@
 
 This tool is **editor-only** and scans the active scene to render dependency nodes and edges.
 
-## Editor-only custom dependency declarations
+## Scanned dependency sources
 
-To keep runtime/player builds clean, the dependency-emitter contract lives in:
+The scanner currently collects dependencies from:
 
-- `Runtime/IDependencyEmitter.cs`
-
-When adding custom dependencies, use one of these patterns:
-
-### Pattern A (recommended): partial class split
-
-Create your runtime MonoBehaviour normally, then add an editor-only partial companion that implements
-`IDependencyEmitter`.
-
-#### Runtime file (included in player)
-```csharp
-using UnityEngine;
-
-public partial class UiBuilderService : MonoBehaviour
-{
-    [SerializeField] private MonoBehaviour viewFactory;
-    [SerializeField] private ScriptableObject themeConfig;
-}
-```
-
-#### Editor file (excluded from player)
-Create this under an `Editor/` folder.
-```csharp
-#if UNITY_EDITOR
-public partial class UiBuilderService : IDependencyEmitter
-{
-    public void EmitDependencies(IDependencyEmitContext context)
-    {
-        context.AddDependency(viewFactory, nameof(viewFactory), dependencyKind: "SerializedUnityRef", details: "Factory used to build views");
-        context.AddDependency(themeConfig, nameof(themeConfig), dependencyKind: "SerializeReferenceManaged", details: "Theme source");
-    }
-}
-#endif
-```
-
-### Pattern B: full class wrapped in `#if UNITY_EDITOR`
-Use this only if the class itself is purely editor/debug and should not exist at runtime.
+- Serialized Unity object references
+- Managed `[SerializeReference]` fields
+- UnityEvent persistent listeners
 
 ## Port labeling rule
 
-`memberName` in `AddDependency(...)` becomes the port label:
+`memberName` from scanned members becomes the port label:
 
 - output port: `OUT: <memberName>`
 - input port: `IN: <memberName>`
@@ -60,8 +26,7 @@ Use member/field-like names for best clarity, e.g.:
 
 ## Dependency kind mapping
 
-`dependencyKind` maps to `DependencyType` by enum-name parsing. If no match is found, it falls back to
-`DependencyType.SerializedUnityRef`.
+Scanner dependency kinds map to `DependencyType` by enum-name parsing. If no match is found, it falls back to `DependencyType.SerializedUnityRef`.
 
 ## Direction mental model
 
