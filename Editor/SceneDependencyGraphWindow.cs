@@ -59,6 +59,7 @@ public sealed class SceneDependencyGraphWindow : EditorWindow
         public float GroupSpacing = 520f;
         public float NodeFontSize = DefaultNodeFontSize;
         public float NodeIconSize = DefaultNodeIconSize;
+        public bool AutoHideNodesOnRefresh = true;
     }
 
     [Serializable]
@@ -98,6 +99,7 @@ public sealed class SceneDependencyGraphWindow : EditorWindow
     private float _horizontalSpacing = 360f;
     private float _verticalSpacing = 48f;
     private float _groupSpacing = 520f;
+    private bool _autoHideNodesOnRefresh = true;
 
     private DependencyType? _currentFilter;
     private DependencyModel _model;
@@ -244,6 +246,18 @@ public sealed class SceneDependencyGraphWindow : EditorWindow
         }
         toolbar.Add(filterField);
 
+        var autoHideToggle = new ToolbarToggle
+        {
+            text = "Auto Hide On Scan",
+            tooltip = "Hide all nodes after each refresh so you can reveal only what you need from the hierarchy.",
+            value = _autoHideNodesOnRefresh,
+        };
+        autoHideToggle.RegisterValueChangedCallback(evt =>
+        {
+            _autoHideNodesOnRefresh = evt.newValue;
+            SaveWindowSettings();
+        });
+        toolbar.Add(autoHideToggle);
 
         rootVisualElement.Add(toolbar);
 
@@ -323,14 +337,40 @@ public sealed class SceneDependencyGraphWindow : EditorWindow
         var visibilityToolbar = new VisualElement();
         visibilityToolbar.style.flexDirection = FlexDirection.Row;
 
-        var showAllButton = new Button(() => SetVisibilityForFilteredNodes(true)) { text = "Show Filtered" };
-        var hideAllButton = new Button(() => SetVisibilityForFilteredNodes(false)) { text = "Hide Filtered" };
-        visibilityToolbar.Add(showAllButton);
-        visibilityToolbar.Add(hideAllButton);
+        var showFilteredButton = new Button(() => SetVisibilityForFilteredNodes(true)) { text = "Show Filtered" };
+        var hideFilteredButton = new Button(() => SetVisibilityForFilteredNodes(false)) { text = "Hide Filtered" };
+        visibilityToolbar.Add(showFilteredButton);
+        visibilityToolbar.Add(hideFilteredButton);
         pane.Add(visibilityToolbar);
+
+        var visibilityToolbarSecondary = new VisualElement();
+        visibilityToolbarSecondary.style.flexDirection = FlexDirection.Row;
+        var showAllButton = new Button(ShowAllNodes) { text = "Show All" };
+        var hideAllButton = new Button(HideAllNodes) { text = "Hide All" };
+        visibilityToolbarSecondary.Add(showAllButton);
+        visibilityToolbarSecondary.Add(hideAllButton);
+        pane.Add(visibilityToolbarSecondary);
+
+        var ngpBox = new VisualElement();
+        ngpBox.style.marginTop = 6f;
+        ngpBox.style.paddingTop = 4f;
+        ngpBox.style.paddingBottom = 4f;
+        ngpBox.style.borderTopWidth = 1f;
+        ngpBox.style.borderTopColor = new Color(1f, 1f, 1f, 0.08f);
+        ngpBox.Add(new Label("NodeGraphProcessor") { style = { unityFontStyleAndWeight = FontStyle.Bold } });
+        _nodeGraphProcessorPanelStatusLabel = new Label();
+        ngpBox.Add(_nodeGraphProcessorPanelStatusLabel);
+
+        var ngpButtonRow = new VisualElement { style = { flexDirection = FlexDirection.Row } };
+        ngpButtonRow.Add(new Button(() => _nodeGraphProcessorApi?.TryOpenGraphWindow()) { text = "Open Window" });
+        ngpButtonRow.Add(new Button(CreateNodeGraphProcessorAsset) { text = "Create Graph" });
+        ngpBox.Add(ngpButtonRow);
+        ngpBox.Add(new Button(ExportNodeGraphProcessorSnapshot) { text = "Export Snapshot" });
+        pane.Add(ngpBox);
 
         _hierarchyScrollView = new ScrollView { style = { flexGrow = 1 } };
         pane.Add(_hierarchyScrollView);
+        UpdateNodeGraphProcessorStatus();
         return pane;
     }
 
@@ -511,6 +551,12 @@ public sealed class SceneDependencyGraphWindow : EditorWindow
     {
         _model = new SceneScanner().ScanScene();
         LoadHiddenNodePreferences();
+        if (_autoHideNodesOnRefresh)
+        {
+            HideAllCurrentNodesAsDefault();
+            SaveHiddenNodePreferences();
+        }
+
         LoadNodePositionPreferences();
         LoadNodeColorPreferences();
         RebuildHierarchyList();
@@ -764,6 +810,46 @@ public sealed class SceneDependencyGraphWindow : EditorWindow
                 whiteSpace = WhiteSpace.Normal,
             },
         };
+    }
+
+    private void ShowAllNodes()
+    {
+        SetAllNodeVisibility(showNodes: true);
+    }
+
+    private void HideAllNodes()
+    {
+        SetAllNodeVisibility(showNodes: false);
+    }
+
+    private void SetAllNodeVisibility(bool showNodes)
+    {
+        if (_model == null)
+        {
+            return;
+        }
+
+        foreach (var node in _model.Nodes)
+        {
+            if (string.IsNullOrWhiteSpace(node.GUID))
+            {
+                continue;
+            }
+
+            _knownNodeGuids.Add(node.GUID);
+            if (showNodes)
+            {
+                _hiddenNodeGuids.Remove(node.GUID);
+            }
+            else
+            {
+                _hiddenNodeGuids.Add(node.GUID);
+            }
+        }
+
+        SaveHiddenNodePreferences();
+        RebuildHierarchyList();
+        RedrawGraphOnly();
     }
 
     private void SetVisibilityForFilteredNodes(bool showNodes)
@@ -1112,6 +1198,7 @@ public sealed class SceneDependencyGraphWindow : EditorWindow
         _horizontalSpacing = Mathf.Max(80f, settings.HorizontalSpacing);
         _verticalSpacing = Mathf.Max(12f, settings.VerticalSpacing);
         _groupSpacing = Mathf.Max(120f, settings.GroupSpacing);
+        _autoHideNodesOnRefresh = settings.AutoHideNodesOnRefresh;
 
         if (_horizontalSpacingField != null)
         {
@@ -1138,6 +1225,7 @@ public sealed class SceneDependencyGraphWindow : EditorWindow
             GroupSpacing = _groupSpacing,
             NodeFontSize = Mathf.Clamp(_nodeFontSize, MinimumNodeFontSize, MaximumNodeFontSize),
             NodeIconSize = Mathf.Clamp(_nodeIconSize, MinimumNodeIconSize, MaximumNodeIconSize),
+            AutoHideNodesOnRefresh = _autoHideNodesOnRefresh,
         };
 
         EditorPrefs.SetString(WindowSettingsPrefsPrefix, JsonUtility.ToJson(settings));
