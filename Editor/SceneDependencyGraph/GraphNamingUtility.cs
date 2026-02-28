@@ -1,28 +1,30 @@
 using System;
 
-namespace RonJames.DependencyGraphTool;
 
-internal static class GraphNamingUtility
+namespace RonJames.DependencyGraphTool
 {
-    public static string BuildNodeDisplayName(object owner, string fallbackName)
+    internal static class GraphNamingUtility
     {
-        if (owner is IDependencyGraphNodeNameProvider customNameProvider &&
-            !string.IsNullOrWhiteSpace(customNameProvider.DependencyGraphNodeName))
+        public static string BuildNodeDisplayName(object owner, string fallbackName)
         {
-            return $"{customNameProvider.DependencyGraphNodeName} ({TypeUtility.GetFriendlyTypeName(owner.GetType())})";
+            if (owner is IDependencyGraphNodeNameProvider customNameProvider &&
+                !string.IsNullOrWhiteSpace(customNameProvider.DependencyGraphNodeName))
+            {
+                return $"{customNameProvider.DependencyGraphNodeName} ({TypeUtility.GetFriendlyTypeName(owner.GetType())})";
+            }
+
+            return fallbackName;
         }
 
-        return fallbackName;
-    }
-
-    public static string BuildCollectionItemLabel(string memberPath, int index, object item)
-    {
-        if (item is IDependencyGraphNodeNameProvider customNameProvider &&
-            !string.IsNullOrWhiteSpace(customNameProvider.DependencyGraphNodeName))
+        public static string BuildCollectionItemLabel(string memberPath, int index, object item)
         {
-            return $"{memberPath}[{customNameProvider.DependencyGraphNodeName}]";
-        }
+            if (item is IDependencyGraphNodeNameProvider customNameProvider &&
+                !string.IsNullOrWhiteSpace(customNameProvider.DependencyGraphNodeName))
+            {
+                return $"{memberPath}[{customNameProvider.DependencyGraphNodeName}]";
+            }
 
-        return $"{memberPath}[{index}]";
+            return $"{memberPath}[{index}]";
+        }
     }
 }

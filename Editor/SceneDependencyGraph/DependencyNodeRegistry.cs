@@ -3,118 +3,120 @@ using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using UnityEngine;
 
-namespace RonJames.DependencyGraphTool;
 
-internal sealed class DependencyNodeRegistry
+namespace RonJames.DependencyGraphTool
 {
-    private readonly Dictionary<int, DependencyNode> _unityNodes = new();
-    private readonly Dictionary<object, DependencyNode> _managedNodes = new(ReferenceEqualityComparer.Instance);
-    private readonly List<DependencyNode> _nodes;
-
-    public DependencyNodeRegistry(List<DependencyNode> nodes)
+    internal sealed class DependencyNodeRegistry
     {
-        _nodes = nodes;
-    }
+        private readonly Dictionary<int, DependencyNode> _unityNodes = new();
+        private readonly Dictionary<object, DependencyNode> _managedNodes = new(ReferenceEqualityComparer.Instance);
+        private readonly List<DependencyNode> _nodes;
 
-    public DependencyNode GetOrCreateNode(object owner, string fallbackName = null)
-    {
-        if (owner == null)
+        public DependencyNodeRegistry(List<DependencyNode> nodes)
         {
-            return GetOrCreateManagedNode(new NullNodePlaceholder(fallbackName ?? "Null"), fallbackName ?? "Null");
+            _nodes = nodes;
         }
 
-        if (owner is UnityEngine.Object unityObject)
+        public DependencyNode GetOrCreateNode(object owner, string fallbackName = null)
         {
-            if (unityObject == null)
+            if (owner == null)
+            {
+                return GetOrCreateManagedNode(new NullNodePlaceholder(fallbackName ?? "Null"), fallbackName ?? "Null");
+            }
+
+            if (owner is UnityEngine.Object unityObject)
+            {
+                if (unityObject == null)
+                {
+                    return GetOrCreateManagedNode(
+                        new NullNodePlaceholder(fallbackName ?? "Missing Unity Object"),
+                        fallbackName ?? "Missing Unity Object");
+                }
+
+                return GetOrCreateUnityNode(unityObject, fallbackName);
+            }
+
+            return GetOrCreateManagedNode(owner, fallbackName);
+        }
+
+        private DependencyNode GetOrCreateUnityNode(UnityEngine.Object owner, string fallbackName)
+        {
+            if (owner == null)
             {
                 return GetOrCreateManagedNode(
                     new NullNodePlaceholder(fallbackName ?? "Missing Unity Object"),
                     fallbackName ?? "Missing Unity Object");
             }
 
-            return GetOrCreateUnityNode(unityObject, fallbackName);
-        }
+            var id = owner.GetInstanceID();
+            if (_unityNodes.TryGetValue(id, out var node))
+            {
+                return node;
+            }
 
-        return GetOrCreateManagedNode(owner, fallbackName);
-    }
+            node = new DependencyNode
+            {
+                GUID = $"unity-{id}",
+                Owner = owner,
+                DisplayName = GraphNamingUtility.BuildNodeDisplayName(
+                    owner,
+                    fallbackName ?? $"{owner.name} ({TypeUtility.GetFriendlyTypeName(owner.GetType())})"),
+            };
 
-    private DependencyNode GetOrCreateUnityNode(UnityEngine.Object owner, string fallbackName)
-    {
-        if (owner == null)
-        {
-            return GetOrCreateManagedNode(
-                new NullNodePlaceholder(fallbackName ?? "Missing Unity Object"),
-                fallbackName ?? "Missing Unity Object");
-        }
-
-        var id = owner.GetInstanceID();
-        if (_unityNodes.TryGetValue(id, out var node))
-        {
+            _unityNodes[id] = node;
+            _nodes.Add(node);
             return node;
         }
 
-        node = new DependencyNode
+        private DependencyNode GetOrCreateManagedNode(object owner, string fallbackName)
         {
-            GUID = $"unity-{id}",
-            Owner = owner,
-            DisplayName = GraphNamingUtility.BuildNodeDisplayName(
-                owner,
-                fallbackName ?? $"{owner.name} ({TypeUtility.GetFriendlyTypeName(owner.GetType())})"),
-        };
+            if (_managedNodes.TryGetValue(owner, out var node))
+            {
+                return node;
+            }
 
-        _unityNodes[id] = node;
-        _nodes.Add(node);
-        return node;
-    }
+            node = new DependencyNode
+            {
+                GUID = $"managed-{RuntimeHelpers.GetHashCode(owner)}",
+                Owner = owner,
+                DisplayName = GraphNamingUtility.BuildNodeDisplayName(
+                    owner,
+                    fallbackName ?? TypeUtility.GetFriendlyTypeName(owner.GetType())),
+            };
 
-    private DependencyNode GetOrCreateManagedNode(object owner, string fallbackName)
-    {
-        if (_managedNodes.TryGetValue(owner, out var node))
-        {
+            _managedNodes[owner] = node;
+            _nodes.Add(node);
             return node;
         }
 
-        node = new DependencyNode
+        private sealed class NullNodePlaceholder
         {
-            GUID = $"managed-{RuntimeHelpers.GetHashCode(owner)}",
-            Owner = owner,
-            DisplayName = GraphNamingUtility.BuildNodeDisplayName(
-                owner,
-                fallbackName ?? TypeUtility.GetFriendlyTypeName(owner.GetType())),
-        };
+            private readonly string _name;
 
-        _managedNodes[owner] = node;
-        _nodes.Add(node);
-        return node;
-    }
+            public NullNodePlaceholder(string name)
+            {
+                _name = name;
+            }
 
-    private sealed class NullNodePlaceholder
-    {
-        private readonly string _name;
-
-        public NullNodePlaceholder(string name)
-        {
-            _name = name;
-        }
-
-        public override string ToString()
-        {
-            return _name;
+            public override string ToString()
+            {
+                return _name;
+            }
         }
     }
-}
 
-internal sealed class ReferenceEqualityComparer : IEqualityComparer<object>
-{
-    public static readonly ReferenceEqualityComparer Instance = new();
-
-    public new bool Equals(object x, object y)
+    internal sealed class ReferenceEqualityComparer : IEqualityComparer<object>
     {
-        return ReferenceEquals(x, y);
-    }
+        public static readonly ReferenceEqualityComparer Instance = new();
 
-    public int GetHashCode(object obj)
-    {
-        return RuntimeHelpers.GetHashCode(obj);
+        public new bool Equals(object x, object y)
+        {
+            return ReferenceEquals(x, y);
+        }
+
+        public int GetHashCode(object obj)
+        {
+            return RuntimeHelpers.GetHashCode(obj);
+        }
     }
 }
