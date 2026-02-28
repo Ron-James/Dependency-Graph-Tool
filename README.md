@@ -42,10 +42,9 @@ When `com.alelievr.node-graph-processor` is installed in the Unity project, the 
 
 - **NGP Window**: opens the NodeGraphProcessor window directly.
 - **Create NGP Graph**: creates a `BaseGraph` asset (when supported by the installed version).
-- **Export NGP Snapshot**: creates a `BaseGraph` asset plus an adapter JSON snapshot of the current dependency model (nodes, fields, and edges) for clean integration-layer handoff.
 - **NGP status label**: shows whether NodeGraphProcessor is detected.
 
-This keeps your existing dependency graph workflow intact while enabling API-level interoperability through a separate adapter layer when the package is present.
+This keeps your existing dependency graph workflow intact while enabling immediate API-level interoperability when the package is present.
 
 
 

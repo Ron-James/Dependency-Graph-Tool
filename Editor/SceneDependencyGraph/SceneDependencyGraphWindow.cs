@@ -230,13 +230,6 @@ public sealed class SceneDependencyGraphWindow : EditorWindow
         };
         toolbar.Add(createNgpAssetButton);
 
-        var exportNgpSnapshotButton = new ToolbarButton(ExportNodeGraphProcessorSnapshot)
-        {
-            text = "Export NGP Snapshot",
-            tooltip = "Create a BaseGraph asset plus an adapter JSON snapshot built from the current dependency model.",
-        };
-        toolbar.Add(exportNgpSnapshotButton);
-
         _nodeGraphProcessorStatusLabel = new Label();
         _nodeGraphProcessorStatusLabel.style.marginLeft = 8f;
         toolbar.Add(_nodeGraphProcessorStatusLabel);
@@ -316,54 +309,6 @@ public sealed class SceneDependencyGraphWindow : EditorWindow
         EditorUtility.DisplayDialog(
             "Unsupported NodeGraphProcessor Version",
             "Could not create a BaseGraph asset. The installed NodeGraphProcessor version may require a custom graph type.",
-            "OK");
-    }
-
-    private void ExportNodeGraphProcessorSnapshot()
-    {
-        if (_nodeGraphProcessorApi == null || !_nodeGraphProcessorApi.IsAvailable)
-        {
-            EditorUtility.DisplayDialog(
-                "NodeGraphProcessor Not Found",
-                "Install com.alelievr.node-graph-processor in your project to export NodeGraphProcessor adapter snapshots.",
-                "OK");
-            return;
-        }
-
-        if (_model == null)
-        {
-            EditorUtility.DisplayDialog(
-                "No Dependency Graph",
-                "Run Scan first so there is dependency data to export.",
-                "OK");
-            return;
-        }
-
-        var path = EditorUtility.SaveFilePanelInProject(
-            "Export NodeGraphProcessor Snapshot",
-            "SceneDependencyGraph",
-            "asset",
-            "Select a destination for the NodeGraphProcessor graph asset and adapter snapshot.");
-
-        if (string.IsNullOrWhiteSpace(path))
-        {
-            return;
-        }
-
-        if (_nodeGraphProcessorApi.TryExportAdapterSnapshot(path, _model, out var snapshotPath))
-        {
-            UpdateNodeGraphProcessorStatus();
-            EditorUtility.DisplayDialog(
-                "Export Complete",
-                $"Created graph asset and adapter snapshot:
-{snapshotPath}",
-                "OK");
-            return;
-        }
-
-        EditorUtility.DisplayDialog(
-            "Export Failed",
-            "Could not export NodeGraphProcessor snapshot. Ensure the installed package includes a concrete BaseGraph type.",
             "OK");
     }
 
