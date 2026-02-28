@@ -2,6 +2,11 @@
 
 All notable changes to this package are documented in this file.
 
+## [Unreleased]
+### Changed
+- Removed `IDependencyEmitter` / `IDependencyEmitContext` interfaces from runtime and editor package code.
+- Scene dependency discovery now relies on built-in scanners and NodeGraphProcessor integration paths only.
+
 ## [1.0.0] - 2026-02-24
 ### Added
 - Initial Unity Package Manager package setup for Dependency Graph Tool.
