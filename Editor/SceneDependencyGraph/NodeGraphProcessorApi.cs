@@ -1,5 +1,4 @@
 using System;
-using System.IO;
 using System.Linq;
 using System.Reflection;
 using UnityEditor;
@@ -77,43 +76,5 @@ internal sealed class NodeGraphProcessorApi
         EditorGUIUtility.PingObject(graphAsset);
         Selection.activeObject = graphAsset;
         return true;
-    }
-
-    public bool TryExportAdapterSnapshot(string graphAssetPath, DependencyModel model, out string snapshotPath)
-    {
-        snapshotPath = null;
-        if (string.IsNullOrWhiteSpace(graphAssetPath))
-        {
-            return false;
-        }
-
-        if (!TryCreateGraphAsset(graphAssetPath))
-        {
-            return false;
-        }
-
-        var adapted = DependencyGraphAdapterBuilder.Build(model);
-        var wrapper = new DependencyGraphAdapterModelWrapper { Graph = adapted };
-        var json = JsonUtility.ToJson(wrapper, true);
-
-        var projectRoot = Path.GetDirectoryName(Application.dataPath);
-        var snapshotRelativePath = Path.ChangeExtension(graphAssetPath, ".adapter.json");
-        var snapshotAbsolutePath = Path.Combine(projectRoot ?? string.Empty, snapshotRelativePath);
-        var snapshotDirectory = Path.GetDirectoryName(snapshotAbsolutePath);
-        if (!string.IsNullOrWhiteSpace(snapshotDirectory))
-        {
-            Directory.CreateDirectory(snapshotDirectory);
-        }
-
-        File.WriteAllText(snapshotAbsolutePath, json);
-        AssetDatabase.ImportAsset(snapshotRelativePath);
-        snapshotPath = snapshotRelativePath;
-        return true;
-    }
-
-    [Serializable]
-    private sealed class DependencyGraphAdapterModelWrapper
-    {
-        public DependencyGraphAdapterModel Graph;
     }
 }
