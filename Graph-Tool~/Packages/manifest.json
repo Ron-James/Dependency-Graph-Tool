@@ -1,6 +1,6 @@
 {
   "dependencies": {
-    "com.alelievr.node-graph-processor": "file:../../Packages/com.alelievr.node-graph-processor/NodeGraphProcessor-1.3.0",
+    "com.alelievr.node-graph-processor": "file:../../Packages/com.alelievr.node-graph-processor",
     "com.unity.ai.navigation": "2.0.9",
     "com.unity.collab-proxy": "2.10.0",
     "com.unity.ide.rider": "3.0.38",
