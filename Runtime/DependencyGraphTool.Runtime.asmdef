@@ -1,6 +1,6 @@
 {
   "name": "DependencyGraphTool.Runtime",
-  "rootNamespace": "",
+  "rootNamespace": "RonJames.DependencyGraphTool",
   "references": [],
   "includePlatforms": [],
   "excludePlatforms": [],

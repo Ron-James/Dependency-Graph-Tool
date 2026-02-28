@@ -1,5 +1,7 @@
 using System;
 
+namespace RonJames.DependencyGraphTool;
+
 internal static class GraphNamingUtility
 {
     public static string BuildNodeDisplayName(object owner, string fallbackName)

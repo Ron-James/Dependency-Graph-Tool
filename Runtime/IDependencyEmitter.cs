@@ -1,3 +1,5 @@
+namespace RonJames.DependencyGraphTool;
+
 public interface IDependencyEmitter
 {
     void EmitDependencies(IDependencyEmitContext context);

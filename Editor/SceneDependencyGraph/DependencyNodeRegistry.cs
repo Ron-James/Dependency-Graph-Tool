@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using UnityEngine;
 
+namespace RonJames.DependencyGraphTool;
+
 internal sealed class DependencyNodeRegistry
 {
     private readonly Dictionary<int, DependencyNode> _unityNodes = new();

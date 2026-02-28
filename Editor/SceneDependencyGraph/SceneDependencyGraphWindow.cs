@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using UnityEditor;
 using UnityEditor.Events;
@@ -9,6 +10,8 @@ using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.UIElements;
 using UnityEngine.SceneManagement;
+
+namespace RonJames.DependencyGraphTool;
 
 public sealed class SceneDependencyGraphWindow : EditorWindow
 {
@@ -94,6 +97,7 @@ public sealed class SceneDependencyGraphWindow : EditorWindow
     private Label _fontSizeLabel;
     private Slider _iconSizeSlider;
     private Label _nodeGraphProcessorStatusLabel;
+    private Label _nodeGraphProcessorPanelStatusLabel;
     private float _nodeFontSize = DefaultNodeFontSize;
     private float _nodeIconSize = DefaultNodeIconSize;
     private float _horizontalSpacing = 360f;
@@ -281,7 +285,7 @@ public sealed class SceneDependencyGraphWindow : EditorWindow
 
     private void UpdateNodeGraphProcessorStatus()
     {
-        if (_nodeGraphProcessorStatusLabel == null)
+        if (_nodeGraphProcessorStatusLabel == null && _nodeGraphProcessorPanelStatusLabel == null)
         {
             return;
         }
@@ -289,7 +293,15 @@ public sealed class SceneDependencyGraphWindow : EditorWindow
         var status = _nodeGraphProcessorApi == null || !_nodeGraphProcessorApi.IsAvailable
             ? "NGP: Not Installed"
             : $"NGP: {_nodeGraphProcessorApi.DisplayVersion}";
-        _nodeGraphProcessorStatusLabel.text = status;
+        if (_nodeGraphProcessorStatusLabel != null)
+        {
+            _nodeGraphProcessorStatusLabel.text = status;
+        }
+
+        if (_nodeGraphProcessorPanelStatusLabel != null)
+        {
+            _nodeGraphProcessorPanelStatusLabel.text = status;
+        }
     }
 
     private void CreateNodeGraphProcessorAsset()
@@ -324,6 +336,31 @@ public sealed class SceneDependencyGraphWindow : EditorWindow
             "Unsupported NodeGraphProcessor Version",
             "Could not create a BaseGraph asset. The installed NodeGraphProcessor version may require a custom graph type.",
             "OK");
+    }
+
+    private void ExportNodeGraphProcessorSnapshot()
+    {
+        if (_model == null)
+        {
+            EditorUtility.DisplayDialog("No Graph Data", "Refresh the graph before exporting a snapshot.", "OK");
+            return;
+        }
+
+        var snapshot = DependencyGraphAdapterBuilder.Build(_model);
+        var path = EditorUtility.SaveFilePanel(
+            "Export Dependency Snapshot",
+            Application.dataPath,
+            "SceneDependencyGraphSnapshot",
+            "json");
+
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return;
+        }
+
+        File.WriteAllText(path, JsonUtility.ToJson(snapshot, true));
+        AssetDatabase.Refresh();
+        Debug.Log($"Exported dependency snapshot to: {path}");
     }
 
     private VisualElement CreateLeftPane()

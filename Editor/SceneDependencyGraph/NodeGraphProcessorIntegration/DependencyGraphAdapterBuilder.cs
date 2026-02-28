@@ -2,6 +2,8 @@ using System;
 using System.Linq;
 using UnityEngine;
 
+namespace RonJames.DependencyGraphTool;
+
 internal static class DependencyGraphAdapterBuilder
 {
     public static DependencyGraphAdapterModel Build(DependencyModel model)

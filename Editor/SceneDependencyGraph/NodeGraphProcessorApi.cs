@@ -4,6 +4,8 @@ using System.Reflection;
 using UnityEditor;
 using UnityEngine;
 
+namespace RonJames.DependencyGraphTool;
+
 internal sealed class NodeGraphProcessorApi
 {
     private const string BaseGraphWindowTypeName = "GraphProcessor.BaseGraphWindow";
