@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using System.Reflection;
 using UnityEditor;
+using UnityEditor.PackageManager;
 using UnityEngine;
 
 
@@ -66,9 +67,21 @@ namespace RonJames.DependencyGraphTool
                     return "Not Installed";
                 }
 
+                var packageVersion = TryGetPackageVersion();
+                if (!string.IsNullOrWhiteSpace(packageVersion))
+                {
+                    return $"Installed ({packageVersion})";
+                }
+
                 var version = _graphProcessorAssembly.GetName().Version;
                 return version == null ? "Installed" : $"Installed ({version})";
             }
+        }
+
+        private string TryGetPackageVersion()
+        {
+            var packageInfo = PackageInfo.FindForAssembly(_graphProcessorAssembly);
+            return packageInfo?.version;
         }
 
         public bool TryOpenGraphWindow()
