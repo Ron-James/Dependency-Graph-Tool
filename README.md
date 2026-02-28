@@ -26,6 +26,7 @@ In Unity, open:
 ## Runtime/editor split
 
 - `Runtime/IDependencyEmitter.cs` contains the dependency emitter contract.
+- `Runtime/IDependencyGraphNodeNameProvider.cs` lets your objects provide custom graph node labels without relying on app-specific naming interfaces.
 - Editor graph/scanning code lives under `Editor/`.
 
 For extension details, see [Documentation~/SCENE_DEPENDENCY_GRAPH.md](Documentation~/SCENE_DEPENDENCY_GRAPH.md) and [Documentation~/EXTENDING_SPECIALIZED_NODES.md](Documentation~/EXTENDING_SPECIALIZED_NODES.md).
