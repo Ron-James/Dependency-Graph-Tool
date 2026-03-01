@@ -153,12 +153,19 @@ namespace RonJames.DependencyGraphTool
                 return false;
             }
 
-            var args = new object[] { model, null };
-            var result = viewMethod.Invoke(null, args);
-            error = args[1] as string;
-            if (result is bool success && success)
+            try
             {
-                return true;
+                var args = new object[] { model, null };
+                var result = viewMethod.Invoke(null, args);
+                error = args[1] as string;
+                if (result is bool success && success)
+                {
+                    return true;
+                }
+            }
+            catch (TargetInvocationException exception)
+            {
+                error = exception.InnerException?.Message ?? exception.Message;
             }
 
             return TryOpenOrCreateFallbackGraphAsset(DefaultGraphAssetPath, out error);

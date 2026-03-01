@@ -12,7 +12,7 @@ namespace RonJames.DependencyGraphTool.NodeGraphProcessorIntegration
     }
 
     [System.Serializable]
-    internal abstract class DependencyGraphBaseNode : BaseNode
+    public abstract class DependencyGraphBaseNode : BaseNode
     {
         [Input(name = "IN", allowMultiple = true)]
         [SerializeField]
@@ -58,21 +58,20 @@ namespace RonJames.DependencyGraphTool.NodeGraphProcessorIntegration
     }
 
     [System.Serializable]
-    internal sealed class MonoBehaviourDependencyNode : DependencyGraphBaseNode
+    public sealed class MonoBehaviourDependencyNode : DependencyGraphBaseNode
     {
         public override DependencyGraphNodeKind Kind => DependencyGraphNodeKind.MonoBehaviour;
     }
 
     [System.Serializable]
-    internal sealed class ScriptableObjectDependencyNode : DependencyGraphBaseNode
+    public sealed class ScriptableObjectDependencyNode : DependencyGraphBaseNode
     {
         public override DependencyGraphNodeKind Kind => DependencyGraphNodeKind.ScriptableObject;
     }
 
     [System.Serializable]
-    internal sealed class ManagedObjectDependencyNode : DependencyGraphBaseNode
+    public sealed class ManagedObjectDependencyNode : DependencyGraphBaseNode
     {
         public override DependencyGraphNodeKind Kind => DependencyGraphNodeKind.ManagedObject;
     }
 }
-
