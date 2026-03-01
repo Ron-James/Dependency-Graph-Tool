@@ -11,6 +11,7 @@ namespace RonJames.DependencyGraphTool
 {
     internal sealed class NodeGraphProcessorApi
     {
+        private const string DefaultGraphAssetPath = "Assets/SceneDependencyGraph.asset";
         private const string BaseGraphWindowTypeName = "GraphProcessor.BaseGraphWindow";
         private const string BaseGraphTypeName = "GraphProcessor.BaseGraph";
         private const string GraphBridgeTypeName = "RonJames.DependencyGraphTool.NodeGraphProcessorIntegration.NodeGraphProcessorBridge";
@@ -131,7 +132,14 @@ namespace RonJames.DependencyGraphTool
 
             if (_graphBridgeType == null)
             {
-                error = "NodeGraphProcessor integration bridge was not found. Ensure HAS_NODE_GRAPH_PROCESSOR is enabled and the integration assembly compiles.";
+                if (TryOpenOrCreateFallbackGraphAsset(DefaultGraphAssetPath, out error))
+                {
+                    return true;
+                }
+
+                error = string.IsNullOrWhiteSpace(error)
+                    ? "NodeGraphProcessor integration bridge was not found and a fallback graph asset could not be opened."
+                    : error;
                 return false;
             }
 
@@ -148,7 +156,41 @@ namespace RonJames.DependencyGraphTool
             var args = new object[] { model, null };
             var result = viewMethod.Invoke(null, args);
             error = args[1] as string;
-            return result is bool success && success;
+            if (result is bool success && success)
+            {
+                return true;
+            }
+
+            return TryOpenOrCreateFallbackGraphAsset(DefaultGraphAssetPath, out error);
+        }
+
+        private bool TryOpenOrCreateFallbackGraphAsset(string path, out string error)
+        {
+            error = null;
+            if (_concreteGraphType == null)
+            {
+                error = "No compatible NodeGraphProcessor graph type was found for fallback graph asset creation.";
+                return false;
+            }
+
+            var graphAsset = AssetDatabase.LoadAssetAtPath(path, _concreteGraphType);
+            if (graphAsset == null)
+            {
+                graphAsset = ScriptableObject.CreateInstance(_concreteGraphType);
+                AssetDatabase.CreateAsset(graphAsset, path);
+            }
+
+            EditorUtility.SetDirty(graphAsset);
+            AssetDatabase.SaveAssets();
+            Selection.activeObject = graphAsset;
+            EditorGUIUtility.PingObject(graphAsset);
+
+            if (_concreteGraphWindowType != null)
+            {
+                EditorWindow.GetWindow(_concreteGraphWindowType);
+            }
+
+            return true;
         }
 
         private static Type FindConcreteSubclass(Type baseType, Assembly preferredAssembly)
