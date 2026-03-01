@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using UnityEditor;
 using UnityEditor.Events;
@@ -230,10 +229,10 @@ namespace RonJames.DependencyGraphTool
             };
             toolbar.Add(ngpWindowButton);
 
-            var createNgpAssetButton = new ToolbarButton(CreateNodeGraphProcessorAsset)
+            var createNgpAssetButton = new ToolbarButton(ViewNodeGraphProcessorGraph)
             {
-                text = "Create NGP Graph",
-                tooltip = "Create a BaseGraph asset when NodeGraphProcessor is installed.",
+                text = "View NGP Graph",
+                tooltip = "Open the Scene Dependency Graph asset in NodeGraphProcessor and sync it from the current scene dependency graph.",
             };
             toolbar.Add(createNgpAssetButton);
 
@@ -305,29 +304,24 @@ namespace RonJames.DependencyGraphTool
             }
         }
 
-        private void CreateNodeGraphProcessorAsset()
+        private void ViewNodeGraphProcessorGraph()
         {
             if (_nodeGraphProcessorApi == null || !_nodeGraphProcessorApi.IsAvailable)
             {
                 EditorUtility.DisplayDialog(
                     "NodeGraphProcessor Not Found",
-                    "Install com.alelievr.node-graph-processor in your project to create NodeGraphProcessor graph assets.",
+                    "Install com.alelievr.node-graph-processor in your project to open and author scene dependency graphs.",
                     "OK");
                 return;
             }
 
-            var path = EditorUtility.SaveFilePanelInProject(
-                "Create NodeGraphProcessor Graph",
-                "SceneDependencyGraph",
-                "asset",
-                "Select a destination for the NodeGraphProcessor graph asset.");
-
-            if (string.IsNullOrWhiteSpace(path))
+            if (_model == null)
             {
+                EditorUtility.DisplayDialog("No Graph Data", "Refresh the graph before opening NodeGraphProcessor view.", "OK");
                 return;
             }
 
-            if (_nodeGraphProcessorApi.TryCreateGraphAsset(path))
+            if (_nodeGraphProcessorApi.TryViewGraph(_model, out var error))
             {
                 UpdateNodeGraphProcessorStatus();
                 return;
@@ -335,33 +329,10 @@ namespace RonJames.DependencyGraphTool
 
             EditorUtility.DisplayDialog(
                 "Unsupported NodeGraphProcessor Version",
-                "Could not create a BaseGraph asset. The installed NodeGraphProcessor version may require a custom graph type.",
+                string.IsNullOrWhiteSpace(error)
+                    ? "Could not open the Scene Dependency Graph in NodeGraphProcessor."
+                    : error,
                 "OK");
-        }
-
-        private void ExportNodeGraphProcessorSnapshot()
-        {
-            if (_model == null)
-            {
-                EditorUtility.DisplayDialog("No Graph Data", "Refresh the graph before exporting a snapshot.", "OK");
-                return;
-            }
-
-            var snapshot = DependencyGraphAdapterBuilder.Build(_model);
-            var path = EditorUtility.SaveFilePanel(
-                "Export Dependency Snapshot",
-                Application.dataPath,
-                "SceneDependencyGraphSnapshot",
-                "json");
-
-            if (string.IsNullOrWhiteSpace(path))
-            {
-                return;
-            }
-
-            File.WriteAllText(path, JsonUtility.ToJson(snapshot, true));
-            AssetDatabase.Refresh();
-            Debug.Log($"Exported dependency snapshot to: {path}");
         }
 
         private VisualElement CreateLeftPane()
@@ -400,10 +371,8 @@ namespace RonJames.DependencyGraphTool
             ngpBox.Add(_nodeGraphProcessorPanelStatusLabel);
 
             var ngpButtonRow = new VisualElement { style = { flexDirection = FlexDirection.Row } };
-            ngpButtonRow.Add(new Button(() => _nodeGraphProcessorApi?.TryOpenGraphWindow()) { text = "Open Window" });
-            ngpButtonRow.Add(new Button(CreateNodeGraphProcessorAsset) { text = "Create Graph" });
+            ngpButtonRow.Add(new Button(ViewNodeGraphProcessorGraph) { text = "View Graph" });
             ngpBox.Add(ngpButtonRow);
-            ngpBox.Add(new Button(ExportNodeGraphProcessorSnapshot) { text = "Export Snapshot" });
             pane.Add(ngpBox);
 
             _hierarchyScrollView = new ScrollView { style = { flexGrow = 1 } };

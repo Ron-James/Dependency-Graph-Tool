@@ -13,25 +13,29 @@ namespace RonJames.DependencyGraphTool
     {
         private const string BaseGraphWindowTypeName = "GraphProcessor.BaseGraphWindow";
         private const string BaseGraphTypeName = "GraphProcessor.BaseGraph";
+        private const string GraphBridgeTypeName = "RonJames.DependencyGraphTool.NodeGraphProcessorIntegration.NodeGraphProcessorBridge";
 
         private readonly Type _baseGraphWindowType;
         private readonly Type _baseGraphType;
         private readonly Type _concreteGraphWindowType;
         private readonly Type _concreteGraphType;
         private readonly Assembly _graphProcessorAssembly;
+        private readonly Type _graphBridgeType;
 
         private NodeGraphProcessorApi(
             Type baseGraphWindowType,
             Type baseGraphType,
             Type concreteGraphWindowType,
             Type concreteGraphType,
-            Assembly graphProcessorAssembly)
+            Assembly graphProcessorAssembly,
+            Type graphBridgeType)
         {
             _baseGraphWindowType = baseGraphWindowType;
             _baseGraphType = baseGraphType;
             _concreteGraphWindowType = concreteGraphWindowType;
             _concreteGraphType = concreteGraphType;
             _graphProcessorAssembly = graphProcessorAssembly;
+            _graphBridgeType = graphBridgeType;
         }
 
         public static NodeGraphProcessorApi Detect()
@@ -48,13 +52,17 @@ namespace RonJames.DependencyGraphTool
             var graphProcessorAssembly = baseGraphWindowType?.Assembly ?? baseGraphType?.Assembly;
             var concreteGraphWindowType = FindConcreteSubclass(baseGraphWindowType, graphProcessorAssembly);
             var concreteGraphType = FindConcreteSubclass(baseGraphType, graphProcessorAssembly);
+            var graphBridgeType = assemblies
+                .Select(assembly => assembly.GetType(GraphBridgeTypeName, false))
+                .FirstOrDefault(type => type != null);
 
             return new NodeGraphProcessorApi(
                 baseGraphWindowType,
                 baseGraphType,
                 concreteGraphWindowType,
                 concreteGraphType,
-                graphProcessorAssembly);
+                graphProcessorAssembly,
+                graphBridgeType);
         }
 
         public bool IsAvailable => _baseGraphWindowType != null || _baseGraphType != null;
@@ -110,6 +118,37 @@ namespace RonJames.DependencyGraphTool
             EditorGUIUtility.PingObject(graphAsset);
             Selection.activeObject = graphAsset;
             return true;
+        }
+
+        public bool TryViewGraph(DependencyModel model, out string error)
+        {
+            error = null;
+            if (model == null)
+            {
+                error = "No scene dependency model is available.";
+                return false;
+            }
+
+            if (_graphBridgeType == null)
+            {
+                error = "NodeGraphProcessor integration bridge was not found. Ensure HAS_NODE_GRAPH_PROCESSOR is enabled and the integration assembly compiles.";
+                return false;
+            }
+
+            var viewMethod = _graphBridgeType.GetMethod(
+                "TryOpenOrCreateGraph",
+                BindingFlags.Public | BindingFlags.Static);
+
+            if (viewMethod == null)
+            {
+                error = "NodeGraphProcessor integration bridge does not expose TryOpenOrCreateGraph.";
+                return false;
+            }
+
+            var args = new object[] { model, null };
+            var result = viewMethod.Invoke(null, args);
+            error = args[1] as string;
+            return result is bool success && success;
         }
 
         private static Type FindConcreteSubclass(Type baseType, Assembly preferredAssembly)
