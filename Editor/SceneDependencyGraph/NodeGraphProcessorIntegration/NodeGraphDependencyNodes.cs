@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace RonJames.DependencyGraphTool.NodeGraphProcessorIntegration
 {
-    internal enum DependencyGraphNodeKind
+    public enum DependencyGraphNodeKind
     {
         MonoBehaviour,
         ScriptableObject,
