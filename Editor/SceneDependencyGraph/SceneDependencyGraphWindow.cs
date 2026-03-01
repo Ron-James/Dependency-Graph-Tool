@@ -876,7 +876,7 @@ namespace RonJames.DependencyGraphTool
                 _knownNodeGuids.Add(node.GUID);
                 if (showNodes)
                 {
-                    _hiddenNodeGuids.Remove(node.GUID);
+                    ShowNodeAndConnectedNodes(node.GUID);
                 }
                 else
                 {
@@ -1010,7 +1010,7 @@ namespace RonJames.DependencyGraphTool
 
             if (_hiddenNodeGuids.Contains(node.GUID))
             {
-                _hiddenNodeGuids.Remove(node.GUID);
+                ShowNodeAndConnectedNodes(node.GUID);
             }
             else
             {
@@ -1020,6 +1020,88 @@ namespace RonJames.DependencyGraphTool
             SaveHiddenNodePreferences();
             RebuildHierarchyList();
             RedrawGraphOnly();
+        }
+
+        private void ShowNodeAndConnectedNodes(string startingNodeGuid)
+        {
+            if (_model == null || string.IsNullOrWhiteSpace(startingNodeGuid))
+            {
+                return;
+            }
+
+            var connectedNodeGuids = CollectConnectedNodeGuids(startingNodeGuid);
+            foreach (var nodeGuid in connectedNodeGuids)
+            {
+                _knownNodeGuids.Add(nodeGuid);
+                _hiddenNodeGuids.Remove(nodeGuid);
+            }
+        }
+
+        private HashSet<string> CollectConnectedNodeGuids(string startingNodeGuid)
+        {
+            var connectedNodeGuids = new HashSet<string>();
+            if (_model?.Edges == null)
+            {
+                return connectedNodeGuids;
+            }
+
+            var adjacencyByNodeGuid = new Dictionary<string, HashSet<string>>();
+            foreach (var edge in _model.Edges)
+            {
+                if (edge?.From == null || edge.To == null)
+                {
+                    continue;
+                }
+
+                var fromGuid = edge.From.GUID;
+                var toGuid = edge.To.GUID;
+                if (string.IsNullOrWhiteSpace(fromGuid) || string.IsNullOrWhiteSpace(toGuid))
+                {
+                    continue;
+                }
+
+                if (!adjacencyByNodeGuid.TryGetValue(fromGuid, out var fromNeighbors))
+                {
+                    fromNeighbors = new HashSet<string>();
+                    adjacencyByNodeGuid[fromGuid] = fromNeighbors;
+                }
+
+                if (!adjacencyByNodeGuid.TryGetValue(toGuid, out var toNeighbors))
+                {
+                    toNeighbors = new HashSet<string>();
+                    adjacencyByNodeGuid[toGuid] = toNeighbors;
+                }
+
+                fromNeighbors.Add(toGuid);
+                toNeighbors.Add(fromGuid);
+            }
+
+            var pendingNodeGuids = new Queue<string>();
+            pendingNodeGuids.Enqueue(startingNodeGuid);
+
+            while (pendingNodeGuids.Count > 0)
+            {
+                var currentNodeGuid = pendingNodeGuids.Dequeue();
+                if (!connectedNodeGuids.Add(currentNodeGuid))
+                {
+                    continue;
+                }
+
+                if (!adjacencyByNodeGuid.TryGetValue(currentNodeGuid, out var neighbors))
+                {
+                    continue;
+                }
+
+                foreach (var neighborNodeGuid in neighbors)
+                {
+                    if (!connectedNodeGuids.Contains(neighborNodeGuid))
+                    {
+                        pendingNodeGuids.Enqueue(neighborNodeGuid);
+                    }
+                }
+            }
+
+            return connectedNodeGuids;
         }
 
 
