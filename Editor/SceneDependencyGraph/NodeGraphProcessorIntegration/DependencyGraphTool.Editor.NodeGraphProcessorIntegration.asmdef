@@ -3,7 +3,7 @@
   "rootNamespace": "RonJames.DependencyGraphTool.NodeGraphProcessorIntegration",
   "references": [
     "DependencyGraphTool.Editor",
-    "GraphProcessor"
+    "com.alelievr.NodeGraphProcessor.Editor"
   ],
   "includePlatforms": [
     "Editor"
