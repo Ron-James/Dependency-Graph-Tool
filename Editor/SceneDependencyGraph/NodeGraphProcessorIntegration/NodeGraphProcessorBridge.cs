@@ -1,4 +1,3 @@
-
 using System;
 using System.Collections.Generic;
 using GraphProcessor;
@@ -56,7 +55,8 @@ namespace RonJames.DependencyGraphTool.NodeGraphProcessorIntegration
                 AssetDatabase.CreateAsset(graph, GraphAssetPath);
             }
 
-            PopulateGraph(graph, model);
+            var adaptedModel = DependencyGraphAdapterBuilder.Build(model);
+            PopulateGraph(graph, adaptedModel);
             EditorUtility.SetDirty(graph);
             AssetDatabase.SaveAssets();
             Selection.activeObject = graph;
@@ -65,7 +65,7 @@ namespace RonJames.DependencyGraphTool.NodeGraphProcessorIntegration
             return true;
         }
 
-        private static void PopulateGraph(SceneDependencyGraphAsset graph, DependencyModel model)
+        private static void PopulateGraph(SceneDependencyGraphAsset graph, DependencyGraphAdapterModel adaptedModel)
         {
             graph.Deserialize();
             graph.edges.Clear();
@@ -77,14 +77,14 @@ namespace RonJames.DependencyGraphTool.NodeGraphProcessorIntegration
 
             var nodesByDependencyGuid = new Dictionary<string, DependencyGraphBaseNode>(StringComparer.Ordinal);
             var index = 0;
-            foreach (var modelNode in model.Nodes)
+            foreach (var adapterNode in adaptedModel.Nodes)
             {
-                if (modelNode == null)
+                if (adapterNode == null)
                 {
                     continue;
                 }
 
-                var nodeType = ResolveNodeType(modelNode.Owner);
+                var nodeType = ResolveNodeType(adapterNode.NodeKind);
                 var position = new Vector2((index % 5) * HorizontalSpacing, (index / 5) * VerticalSpacing);
                 var runtimeNode = BaseNode.CreateFromType(nodeType, position) as DependencyGraphBaseNode;
                 if (runtimeNode == null)
@@ -93,30 +93,31 @@ namespace RonJames.DependencyGraphTool.NodeGraphProcessorIntegration
                 }
 
                 runtimeNode.SetGraphData(
-                    modelNode.GUID,
-                    modelNode.DisplayName,
-                    TypeUtility.GetFriendlyTypeName(modelNode.Owner?.GetType()),
-                    GetUnityObjectPath(modelNode.Owner as UnityEngine.Object),
-                    BuildNodeDetails(modelNode));
+                    adapterNode.Id,
+                    adapterNode.DisplayName,
+                    adapterNode.TypeName,
+                    adapterNode.UnityObjectPath,
+                    BuildNodeDetails(adapterNode),
+                    adapterNode.UnityObjectInstanceId);
 
                 graph.AddNode(runtimeNode);
-                if (!string.IsNullOrWhiteSpace(modelNode.GUID))
+                if (!string.IsNullOrWhiteSpace(adapterNode.Id))
                 {
-                    nodesByDependencyGuid[modelNode.GUID] = runtimeNode;
+                    nodesByDependencyGuid[adapterNode.Id] = runtimeNode;
                 }
 
                 index++;
             }
 
-            foreach (var modelEdge in model.Edges)
+            foreach (var adapterEdge in adaptedModel.Edges)
             {
-                if (modelEdge?.From == null || modelEdge.To == null)
+                if (adapterEdge == null)
                 {
                     continue;
                 }
 
-                if (!nodesByDependencyGuid.TryGetValue(modelEdge.From.GUID, out var fromNode) ||
-                    !nodesByDependencyGuid.TryGetValue(modelEdge.To.GUID, out var toNode))
+                if (!nodesByDependencyGuid.TryGetValue(adapterEdge.FromNodeId, out var fromNode) ||
+                    !nodesByDependencyGuid.TryGetValue(adapterEdge.ToNodeId, out var toNode))
                 {
                     continue;
                 }
@@ -134,66 +135,27 @@ namespace RonJames.DependencyGraphTool.NodeGraphProcessorIntegration
             graph.UpdateComputeOrder();
         }
 
-        private static Type ResolveNodeType(object owner)
+        private static Type ResolveNodeType(string nodeKind)
         {
-            return owner switch
+            return nodeKind switch
             {
-                MonoBehaviour => typeof(MonoBehaviourDependencyNode),
-                ScriptableObject => typeof(ScriptableObjectDependencyNode),
+                "MonoBehaviour" => typeof(MonoBehaviourDependencyNode),
+                "ScriptableObject" => typeof(ScriptableObjectDependencyNode),
+                "UnityObject" => typeof(UnityObjectDependencyNode),
                 _ => typeof(ManagedObjectDependencyNode),
             };
         }
 
-        private static string BuildNodeDetails(DependencyNode node)
+        private static string BuildNodeDetails(DependencyGraphAdapterNode node)
         {
             if (node == null)
             {
                 return string.Empty;
             }
 
-            var ownerType = TypeUtility.GetFriendlyTypeName(node.Owner?.GetType());
-            var path = GetUnityObjectPath(node.Owner as UnityEngine.Object);
-            return string.IsNullOrWhiteSpace(path)
-                ? ownerType
-                : $"{ownerType} @ {path}";
-        }
-
-        private static string GetUnityObjectPath(UnityEngine.Object unityObject)
-        {
-            if (unityObject == null)
-            {
-                return string.Empty;
-            }
-
-            if (unityObject is Component component)
-            {
-                return component.transform.GetHierarchyPath();
-            }
-
-            if (unityObject is GameObject gameObject)
-            {
-                return gameObject.transform.GetHierarchyPath();
-            }
-
-            return unityObject.name;
-        }
-
-        private static string GetHierarchyPath(this Transform transform)
-        {
-            if (transform == null)
-            {
-                return string.Empty;
-            }
-
-            var path = transform.name;
-            while (transform.parent != null)
-            {
-                transform = transform.parent;
-                path = $"{transform.name}/{path}";
-            }
-
-            return path;
+            return string.IsNullOrWhiteSpace(node.UnityObjectPath)
+                ? node.TypeName
+                : $"{node.TypeName} @ {node.UnityObjectPath}";
         }
     }
 }
-

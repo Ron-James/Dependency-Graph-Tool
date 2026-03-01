@@ -28,6 +28,9 @@ namespace RonJames.DependencyGraphTool
                     DisplayName = node.DisplayName,
                     TypeName = TypeUtility.GetFriendlyTypeName(node.Owner?.GetType()),
                     UnityObjectPath = GetUnityObjectPath(node.Owner as UnityEngine.Object),
+                    UnityObjectInstanceId = (node.Owner as UnityEngine.Object) != null
+                        ? ((UnityEngine.Object)node.Owner).GetInstanceID()
+                        : 0,
                     NodeKind = GetNodeKind(node.Owner),
                 };
 

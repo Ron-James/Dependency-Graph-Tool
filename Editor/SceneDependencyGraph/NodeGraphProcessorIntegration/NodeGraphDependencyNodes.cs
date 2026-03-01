@@ -1,4 +1,3 @@
-
 using GraphProcessor;
 using UnityEngine;
 
@@ -8,6 +7,7 @@ namespace RonJames.DependencyGraphTool.NodeGraphProcessorIntegration
     {
         MonoBehaviour,
         ScriptableObject,
+        UnityObject,
         ManagedObject,
     }
 
@@ -37,23 +37,34 @@ namespace RonJames.DependencyGraphTool.NodeGraphProcessorIntegration
         [SerializeField]
         private string _details;
 
+        [SerializeField]
+        private int _unityObjectInstanceId;
+
         public string DependencyGuid => _dependencyGuid;
         public string DisplayName => _displayName;
         public string TypeName => _typeName;
         public string UnityObjectPath => _unityObjectPath;
         public string Details => _details;
+        public int UnityObjectInstanceId => _unityObjectInstanceId;
 
         public abstract DependencyGraphNodeKind Kind { get; }
 
         public override string name => _displayName;
 
-        public void SetGraphData(string dependencyGuid, string displayName, string typeName, string unityObjectPath, string details)
+        public void SetGraphData(
+            string dependencyGuid,
+            string displayName,
+            string typeName,
+            string unityObjectPath,
+            string details,
+            int unityObjectInstanceId)
         {
             _dependencyGuid = dependencyGuid ?? string.Empty;
             _displayName = displayName ?? string.Empty;
             _typeName = typeName ?? string.Empty;
             _unityObjectPath = unityObjectPath ?? string.Empty;
             _details = details ?? string.Empty;
+            _unityObjectInstanceId = unityObjectInstanceId;
         }
     }
 
@@ -67,6 +78,12 @@ namespace RonJames.DependencyGraphTool.NodeGraphProcessorIntegration
     public sealed class ScriptableObjectDependencyNode : DependencyGraphBaseNode
     {
         public override DependencyGraphNodeKind Kind => DependencyGraphNodeKind.ScriptableObject;
+    }
+
+    [System.Serializable]
+    public sealed class UnityObjectDependencyNode : DependencyGraphBaseNode
+    {
+        public override DependencyGraphNodeKind Kind => DependencyGraphNodeKind.UnityObject;
     }
 
     [System.Serializable]
