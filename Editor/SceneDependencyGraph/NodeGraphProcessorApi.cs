@@ -15,6 +15,8 @@ namespace RonJames.DependencyGraphTool
         private const string BaseGraphWindowTypeName = "GraphProcessor.BaseGraphWindow";
         private const string BaseGraphTypeName = "GraphProcessor.BaseGraph";
         private const string GraphBridgeTypeName = "RonJames.DependencyGraphTool.NodeGraphProcessorIntegration.NodeGraphProcessorBridge";
+        private const string SceneDependencyGraphWindowTypeName = "RonJames.DependencyGraphTool.NodeGraphProcessorIntegration.SceneDependencyGraphGraphWindow";
+        private const string SceneDependencyGraphAssetTypeName = "RonJames.DependencyGraphTool.NodeGraphProcessorIntegration.SceneDependencyGraphAsset";
 
         private readonly Type _baseGraphWindowType;
         private readonly Type _baseGraphType;
@@ -51,11 +53,18 @@ namespace RonJames.DependencyGraphTool
                 .FirstOrDefault(type => type != null);
 
             var graphProcessorAssembly = baseGraphWindowType?.Assembly ?? baseGraphType?.Assembly;
-            var concreteGraphWindowType = FindConcreteSubclass(baseGraphWindowType, graphProcessorAssembly);
-            var concreteGraphType = FindConcreteSubclass(baseGraphType, graphProcessorAssembly);
             var graphBridgeType = assemblies
                 .Select(assembly => assembly.GetType(GraphBridgeTypeName, false))
                 .FirstOrDefault(type => type != null);
+            var sceneGraphWindowType = assemblies
+                .Select(assembly => assembly.GetType(SceneDependencyGraphWindowTypeName, false))
+                .FirstOrDefault(type => type != null);
+            var sceneGraphType = assemblies
+                .Select(assembly => assembly.GetType(SceneDependencyGraphAssetTypeName, false))
+                .FirstOrDefault(type => type != null);
+
+            var concreteGraphWindowType = ResolveConcreteType(baseGraphWindowType, sceneGraphWindowType, graphProcessorAssembly);
+            var concreteGraphType = ResolveConcreteType(baseGraphType, sceneGraphType, graphProcessorAssembly);
 
             return new NodeGraphProcessorApi(
                 baseGraphWindowType,
@@ -153,12 +162,19 @@ namespace RonJames.DependencyGraphTool
                 return false;
             }
 
-            var args = new object[] { model, null };
-            var result = viewMethod.Invoke(null, args);
-            error = args[1] as string;
-            if (result is bool success && success)
+            try
             {
-                return true;
+                var args = new object[] { model, null };
+                var result = viewMethod.Invoke(null, args);
+                error = args[1] as string;
+                if (result is bool success && success)
+                {
+                    return true;
+                }
+            }
+            catch (TargetInvocationException exception)
+            {
+                error = exception.InnerException?.Message ?? exception.Message;
             }
 
             return TryOpenOrCreateFallbackGraphAsset(DefaultGraphAssetPath, out error);
@@ -191,6 +207,21 @@ namespace RonJames.DependencyGraphTool
             }
 
             return true;
+        }
+
+        private static Type ResolveConcreteType(Type baseType, Type preferredType, Assembly preferredAssembly)
+        {
+            if (baseType == null)
+            {
+                return null;
+            }
+
+            if (preferredType != null && baseType.IsAssignableFrom(preferredType) && !preferredType.IsAbstract)
+            {
+                return preferredType;
+            }
+
+            return FindConcreteSubclass(baseType, preferredAssembly);
         }
 
         private static Type FindConcreteSubclass(Type baseType, Assembly preferredAssembly)
