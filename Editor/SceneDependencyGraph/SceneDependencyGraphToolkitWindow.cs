@@ -49,6 +49,12 @@ namespace RonJames.DependencyGraphTool
         private const string HiddenNodePrefsPrefix = "SceneDependencyGraphToolkit.HiddenNodes";
         private const string NodeTypeColorPrefsPrefix = "SceneDependencyGraphToolkit.NodeTypeColors";
         private const string NodeColorPrefsPrefix = "SceneDependencyGraphToolkit.NodeColors";
+        private const float DefaultTextSize = 11f;
+        private const float MinimumTextSize = 9f;
+        private const float MaximumTextSize = 24f;
+        private const float DefaultIconSize = 16f;
+        private const float MinimumIconSize = 10f;
+        private const float MaximumIconSize = 48f;
 
         private SceneScanner _scanner;
         private DependencyModel _model;
@@ -58,6 +64,8 @@ namespace RonJames.DependencyGraphTool
         private Label _detailsLabel;
         private ColorField _nodeColorField;
         private ScrollView _fieldSlotsContainer;
+        private FloatField _textSizeField;
+        private FloatField _iconSizeField;
 
         private readonly HashSet<string> _hiddenNodeGuids = new();
         private readonly HashSet<string> _knownNodeGuids = new();
@@ -67,6 +75,8 @@ namespace RonJames.DependencyGraphTool
 
         private DependencyNode _selectedNode;
         private DependencyType? _currentFilter;
+        private float _textSize = DefaultTextSize;
+        private float _iconSize = DefaultIconSize;
 
         [MenuItem("Tools/Scene Dependency Graph (UI Toolkit WIP)")]
         public static void OpenWindow()
@@ -90,6 +100,36 @@ namespace RonJames.DependencyGraphTool
             var toolbar = new Toolbar();
             toolbar.Add(new ToolbarButton(RefreshGraph) { text = "Refresh ⟳" });
             toolbar.Add(new ToolbarButton(() => _canvas?.Organize()) { text = "Organize" });
+
+            _textSizeField = new FloatField("Text")
+            {
+                value = _textSize,
+                tooltip = "Set text size used in graph nodes and ports.",
+            };
+            _textSizeField.style.width = 110f;
+            _textSizeField.RegisterValueChangedCallback(evt =>
+            {
+                _textSize = Mathf.Clamp(evt.newValue, MinimumTextSize, MaximumTextSize);
+                _textSizeField.SetValueWithoutNotify(_textSize);
+                ApplyCanvasSizing();
+                RedrawGraphOnly();
+            });
+            toolbar.Add(_textSizeField);
+
+            _iconSizeField = new FloatField("Icons")
+            {
+                value = _iconSize,
+                tooltip = "Set icon size used in graph nodes and ports.",
+            };
+            _iconSizeField.style.width = 120f;
+            _iconSizeField.RegisterValueChangedCallback(evt =>
+            {
+                _iconSize = Mathf.Clamp(evt.newValue, MinimumIconSize, MaximumIconSize);
+                _iconSizeField.SetValueWithoutNotify(_iconSize);
+                ApplyCanvasSizing();
+                RedrawGraphOnly();
+            });
+            toolbar.Add(_iconSizeField);
 
             var filterMenu = new ToolbarMenu { text = "Filter: All" };
             filterMenu.menu.AppendAction("All", _ => SetFilter(null));
@@ -119,6 +159,7 @@ namespace RonJames.DependencyGraphTool
             _canvas.style.minHeight = 3000f;
             _canvas.OnNodeSelected += ShowNodeDetails;
             _canvas.OnGraphMutationRequested += RefreshGraph;
+            _canvas.SetSizing(_textSize, _iconSize);
             graphScrollView.Add(_canvas);
 
             splitCenterRight.Add(graphScrollView);
@@ -195,7 +236,13 @@ namespace RonJames.DependencyGraphTool
 
         private void RedrawGraphOnly()
         {
+            ApplyCanvasSizing();
             _canvas?.SetGraph(_model, _hiddenNodeGuids, _currentFilter, _typeColorOverrides, _nodeColorOverrides);
+        }
+
+        private void ApplyCanvasSizing()
+        {
+            _canvas?.SetSizing(_textSize, _iconSize);
         }
 
         private void SetFilter(DependencyType? dependencyType)
@@ -976,6 +1023,10 @@ namespace RonJames.DependencyGraphTool
             private const float MinimumNodeHeight = 112f;
             private const float HorizontalSpacing = 320f;
             private const float VerticalSpacing = 32f;
+            private const float BasePortRowHeight = 18f;
+
+            private float _textSize = DefaultTextSize;
+            private float _iconSize = DefaultIconSize;
 
             private readonly Dictionary<string, Rect> _nodeRects = new();
             private readonly Dictionary<string, VisualElement> _nodeCards = new();
@@ -995,6 +1046,12 @@ namespace RonJames.DependencyGraphTool
             {
                 style.position = Position.Relative;
                 generateVisualContent += DrawEdges;
+            }
+
+            public void SetSizing(float textSize, float iconSize)
+            {
+                _textSize = Mathf.Clamp(textSize, MinimumTextSize, MaximumTextSize);
+                _iconSize = Mathf.Clamp(iconSize, MinimumIconSize, MaximumIconSize);
             }
 
             public void SetGraph(
@@ -1125,7 +1182,7 @@ namespace RonJames.DependencyGraphTool
                 card.style.width = rect.width;
                 card.style.height = rect.height;
                 card.style.backgroundColor = new Color(0.11f, 0.11f, 0.11f, 0.96f);
-                card.style.borderTopWidth = 2f;
+                card.style.borderTopWidth = 5f;
                 card.style.borderTopColor = nodeColor;
                 card.style.borderBottomLeftRadius = 6f;
                 card.style.borderBottomRightRadius = 6f;
@@ -1142,14 +1199,15 @@ namespace RonJames.DependencyGraphTool
                 titleRow.style.alignItems = Align.Center;
 
                 var icon = new Image();
-                icon.style.width = 16f;
-                icon.style.height = 16f;
+                icon.style.width = _iconSize;
+                icon.style.height = _iconSize;
                 icon.style.marginRight = 4f;
                 icon.image = ResolveNodeIcon(node);
                 titleRow.Add(icon);
 
                 var title = new Label(string.IsNullOrWhiteSpace(node.DisplayName) ? "<Unnamed>" : node.DisplayName);
                 title.style.unityFontStyleAndWeight = FontStyle.Bold;
+                title.style.fontSize = _textSize + 1f;
                 title.style.flexGrow = 1f;
                 title.style.whiteSpace = WhiteSpace.Normal;
                 titleRow.Add(title);
@@ -1157,7 +1215,7 @@ namespace RonJames.DependencyGraphTool
                 card.Add(titleRow);
 
                 var subtitle = new Label(node.Owner != null ? TypeUtility.GetFriendlyTypeName(node.Owner.GetType()) : "Managed/Scratch Node");
-                subtitle.style.fontSize = 10f;
+                subtitle.style.fontSize = Mathf.Max(9f, _textSize - 1f);
                 subtitle.style.color = new Color(0.75f, 0.75f, 0.75f, 1f);
                 subtitle.style.marginTop = 4f;
                 card.Add(subtitle);
@@ -1174,7 +1232,7 @@ namespace RonJames.DependencyGraphTool
                     var maxRows = Math.Max(inputPorts?.Count ?? 0, outputPorts?.Count ?? 0);
                     for (var row = 0; row < maxRows; row++)
                     {
-                        var rowElement = new VisualElement { style = { flexDirection = FlexDirection.Row, minHeight = 18f } };
+                        var rowElement = new VisualElement { style = { flexDirection = FlexDirection.Row, minHeight = GetPortRowHeight() } };
                         rowElement.style.alignItems = Align.Center;
 
                         if (inputPorts != null && row < inputPorts.Count)
@@ -1223,10 +1281,14 @@ namespace RonJames.DependencyGraphTool
                     : new Color(0.35f, 0.65f, 1f);
 
                 var label = new Label(GetPortLabel(descriptor, isOutput));
-                label.style.fontSize = 9f;
+                label.style.fontSize = _textSize;
                 label.style.color = new Color(0.85f, 0.85f, 0.85f, 1f);
                 label.style.unityTextAlign = isOutput ? TextAnchor.MiddleRight : TextAnchor.MiddleLeft;
-                label.style.maxWidth = 108f;
+                label.style.maxWidth = Mathf.Max(100f, NodeWidth * 0.36f);
+                label.style.overflow = Overflow.Hidden;
+                label.style.textOverflow = TextOverflow.Ellipsis;
+                label.style.whiteSpace = WhiteSpace.NoWrap;
+                label.style.flexShrink = 1f;
 
                 if (!isOutput)
                 {
@@ -1234,7 +1296,7 @@ namespace RonJames.DependencyGraphTool
                     label.style.marginLeft = 3f;
                 }
 
-                var iconOrBadge = CreatePortTypeIcon(descriptor);
+                var iconOrBadge = CreatePortTypeIcon(descriptor, _textSize, _iconSize);
                 if (iconOrBadge != null)
                 {
                     row.Add(iconOrBadge);
@@ -1262,40 +1324,80 @@ namespace RonJames.DependencyGraphTool
                 return $"{prefix}: {safeFieldName}{emptyMarker}{suffix}";
             }
 
-            private static VisualElement CreatePortTypeIcon(PortDescriptor descriptor)
+            private static VisualElement CreatePortTypeIcon(PortDescriptor descriptor, float textSize, float iconSize)
             {
-                if (descriptor.Type == DependencyType.SerializeReferenceManaged)
+                var referencedType = descriptor.ValueType;
+                var isUnityType = referencedType != null && typeof(UnityEngine.Object).IsAssignableFrom(referencedType);
+                if (!isUnityType)
                 {
-                    var badge = new Label("C#");
-                    badge.style.fontSize = 8f;
-                    badge.style.paddingLeft = 3f;
-                    badge.style.paddingRight = 3f;
-                    badge.style.marginLeft = 3f;
-                    badge.style.marginRight = 3f;
-                    badge.style.color = Color.white;
-                    badge.style.backgroundColor = new Color(0.14f, 0.14f, 0.14f, 0.9f);
-                    badge.style.borderTopLeftRadius = 2f;
-                    badge.style.borderTopRightRadius = 2f;
-                    badge.style.borderBottomLeftRadius = 2f;
-                    badge.style.borderBottomRightRadius = 2f;
-                    return badge;
+                    return CreateManagedTypeBadge(textSize, iconSize);
+                }
+
+                if (referencedType != null && typeof(Component).IsAssignableFrom(referencedType))
+                {
+                    return CreateTypeIcon(EditorGUIUtility.IconContent("cs Script Icon")?.image, iconSize);
+                }
+
+                if (referencedType != null && typeof(ScriptableObject).IsAssignableFrom(referencedType))
+                {
+                    var iconTexture = EditorGUIUtility.ObjectContent(
+                        descriptor.UnityReferenceValue,
+                        referencedType)?.image;
+                    return CreateTypeIcon(iconTexture, iconSize);
                 }
 
                 if (descriptor.Type == DependencyType.SerializedUnityRef || descriptor.Type == DependencyType.OdinSerializedRef)
                 {
-                    var icon = new Image
-                    {
-                        image = EditorGUIUtility.IconContent("cs Script Icon")?.image,
-                        scaleMode = ScaleMode.ScaleToFit,
-                    };
-                    icon.style.width = 11f;
-                    icon.style.height = 11f;
-                    icon.style.marginLeft = 3f;
-                    icon.style.marginRight = 3f;
-                    return icon;
+                    var iconTexture = EditorGUIUtility.ObjectContent(
+                        descriptor.UnityReferenceValue,
+                        referencedType)?.image
+                        ?? EditorGUIUtility.ObjectContent(null, referencedType)?.image
+                        ?? EditorGUIUtility.IconContent("cs Script Icon")?.image;
+                    return CreateTypeIcon(iconTexture, iconSize);
                 }
 
                 return null;
+            }
+
+            private static VisualElement CreateManagedTypeBadge(float textSize, float iconSize)
+            {
+                var badge = new Label("C#");
+                var clampedIconSize = Mathf.Clamp(iconSize, MinimumIconSize, MaximumIconSize);
+                badge.style.minWidth = clampedIconSize * 2.1f;
+                badge.style.height = Mathf.Max(clampedIconSize * 0.85f, textSize + 2f);
+                badge.style.fontSize = Mathf.Max(8f, textSize - 1f);
+                badge.style.paddingLeft = 3f;
+                badge.style.paddingRight = 3f;
+                badge.style.marginLeft = 3f;
+                badge.style.marginRight = 3f;
+                badge.style.color = Color.white;
+                badge.style.unityTextAlign = TextAnchor.MiddleCenter;
+                badge.style.backgroundColor = new Color(0.14f, 0.14f, 0.14f, 0.9f);
+                badge.style.borderTopLeftRadius = 2f;
+                badge.style.borderTopRightRadius = 2f;
+                badge.style.borderBottomLeftRadius = 2f;
+                badge.style.borderBottomRightRadius = 2f;
+                return badge;
+            }
+
+            private static VisualElement CreateTypeIcon(Texture iconTexture, float iconSize)
+            {
+                if (iconTexture == null)
+                {
+                    return null;
+                }
+
+                var icon = new Image
+                {
+                    image = iconTexture,
+                    scaleMode = ScaleMode.ScaleToFit,
+                };
+                var clampedIconSize = Mathf.Clamp(iconSize * 0.75f, MinimumIconSize, MaximumIconSize);
+                icon.style.width = clampedIconSize;
+                icon.style.height = clampedIconSize;
+                icon.style.marginLeft = 3f;
+                icon.style.marginRight = 3f;
+                return icon;
             }
 
             private void UpdatePortAnchor(string portKey, VisualElement portRow, bool isOutput)
@@ -1334,6 +1436,11 @@ namespace RonJames.DependencyGraphTool
                 var ownerType = node.Owner?.GetType();
                 if (node.Owner is UnityEngine.Object unityObject)
                 {
+                    if (unityObject is Component)
+                    {
+                        return EditorGUIUtility.IconContent("cs Script Icon")?.image;
+                    }
+
                     return EditorGUIUtility.ObjectContent(unityObject, ownerType)?.image
                            ?? EditorGUIUtility.ObjectContent(null, ownerType)?.image
                            ?? EditorGUIUtility.IconContent("Prefab Icon")?.image;
@@ -1416,7 +1523,12 @@ namespace RonJames.DependencyGraphTool
                 var inputCount = _inputPortsByNode.TryGetValue(nodeGuid, out var inputPorts) ? inputPorts.Count : 0;
                 var outputCount = _outputPortsByNode.TryGetValue(nodeGuid, out var outputPorts) ? outputPorts.Count : 0;
                 var rowCount = Math.Max(inputCount, outputCount);
-                return Math.Max(MinimumNodeHeight, 70f + (rowCount * 18f));
+                return Math.Max(MinimumNodeHeight, 70f + (rowCount * GetPortRowHeight()));
+            }
+
+            private float GetPortRowHeight()
+            {
+                return Mathf.Max(BasePortRowHeight, _textSize + 10f, (_iconSize * 0.75f) + 6f);
             }
 
             private void BuildPortDescriptors(IReadOnlyList<DependencyNode> visibleNodes)
@@ -1440,6 +1552,8 @@ namespace RonJames.DependencyGraphTool
                                 FieldName = safeFieldName,
                                 HasValue = fieldSlot.HasValue,
                                 ValueSummary = fieldSlot.ValueSummary,
+                                ValueType = fieldSlot.ValueType,
+                                UnityReferenceValue = fieldSlot.UnityReferenceValue,
                             };
                         }
                     }
@@ -1467,9 +1581,15 @@ namespace RonJames.DependencyGraphTool
                         var existingOutput = fromPorts.FirstOrDefault(port => string.Equals(port.FieldName, fieldName, StringComparison.Ordinal));
                         if (existingOutput == null)
                         {
-                            fromPorts.Add(new PortDescriptor { FieldName = fieldName, HasValue = true, Type = edge.Type });
+                            fromPorts.Add(new PortDescriptor
+                            {
+                                FieldName = fieldName,
+                                HasValue = true,
+                                Type = edge.Type,
+                            });
                         }
-                        else if (!existingOutput.Type.HasValue)
+
+                        if (existingOutput != null && !existingOutput.Type.HasValue)
                         {
                             existingOutput.Type = edge.Type;
                         }
@@ -1477,7 +1597,12 @@ namespace RonJames.DependencyGraphTool
 
                     if (_inputPortsByNode.TryGetValue(edge.To.GUID, out var toPorts) && !toPorts.Any(port => string.Equals(port.FieldName, fieldName, StringComparison.Ordinal)))
                     {
-                        toPorts.Add(new PortDescriptor { FieldName = fieldName, HasValue = true, Type = edge.Type });
+                        toPorts.Add(new PortDescriptor
+                        {
+                            FieldName = fieldName,
+                            HasValue = true,
+                            Type = edge.Type,
+                        });
                     }
                 }
 
@@ -1546,6 +1671,8 @@ namespace RonJames.DependencyGraphTool
                 public bool HasValue;
                 public string ValueSummary;
                 public DependencyType? Type;
+                public Type ValueType;
+                public UnityEngine.Object UnityReferenceValue;
             }
         }
     }
