@@ -689,7 +689,6 @@ namespace RonJames.DependencyGraphTool
             private readonly Dictionary<string, Vector2> _portAnchorByKey = new();
             private readonly Dictionary<string, List<PortDescriptor>> _outputPortsByNode = new();
             private readonly Dictionary<string, List<PortDescriptor>> _inputPortsByNode = new();
-            private readonly Dictionary<string, List<EditableReferenceInfo>> _editableReferencesByNode = new();
             private readonly List<DependencyEdge> _edges = new();
             private readonly Dictionary<string, DependencyNode> _nodesByGuid = new();
 
@@ -718,7 +717,6 @@ namespace RonJames.DependencyGraphTool
                 _portAnchorByKey.Clear();
                 _outputPortsByNode.Clear();
                 _inputPortsByNode.Clear();
-                _editableReferencesByNode.Clear();
                 _edges.Clear();
                 _nodesByGuid.Clear();
                 _selectedNodeGuid = null;
@@ -909,71 +907,7 @@ namespace RonJames.DependencyGraphTool
                     }
                 }
 
-                var editableRefs = _editableReferencesByNode.TryGetValue(node.GUID, out var refs) ? refs : null;
-                if (editableRefs != null && editableRefs.Count > 0)
-                {
-                    var foldout = new Foldout
-                    {
-                        text = "References",
-                        value = false,
-                    };
-                    foldout.style.marginTop = 4f;
-
-                    foreach (var editableReference in editableRefs)
-                    {
-                        var objectField = new ObjectField(editableReference.FieldName)
-                        {
-                            allowSceneObjects = true,
-                            objectType = editableReference.FieldInfo?.FieldType ?? typeof(UnityEngine.Object),
-                            value = GetCurrentReferenceValue(editableReference),
-                        };
-                        objectField.tooltip = "Drag/drop to reassign this serialized reference.";
-                        objectField.RegisterValueChangedCallback(evt => ApplyReferenceChange(editableReference, evt.newValue));
-                        foldout.Add(objectField);
-                    }
-
-                    card.Add(foldout);
-                }
-
                 return card;
-            }
-
-            private static UnityEngine.Object GetCurrentReferenceValue(EditableReferenceInfo info)
-            {
-                if (info?.ActionContext?.OwnerObject == null || info.FieldInfo == null)
-                {
-                    return null;
-                }
-
-                return info.FieldInfo.GetValue(info.ActionContext.OwnerObject) as UnityEngine.Object;
-            }
-
-            private void ApplyReferenceChange(EditableReferenceInfo info, UnityEngine.Object newValue)
-            {
-                if (info?.ActionContext?.OwnerObject == null || info.FieldInfo == null)
-                {
-                    return;
-                }
-
-                var fieldType = info.FieldInfo.FieldType;
-                if (!typeof(UnityEngine.Object).IsAssignableFrom(fieldType))
-                {
-                    return;
-                }
-
-                if (newValue != null && !fieldType.IsInstanceOfType(newValue))
-                {
-                    return;
-                }
-
-                info.FieldInfo.SetValue(info.ActionContext.OwnerObject, newValue);
-                EditorUtility.SetDirty(info.ActionContext.OwnerObject);
-                if (info.ActionContext.OwnerObject is Component component)
-                {
-                    EditorSceneManager.MarkSceneDirty(component.gameObject.scene);
-                }
-
-                OnGraphMutationRequested?.Invoke();
             }
 
             private VisualElement CreatePortVisual(string nodeGuid, PortDescriptor descriptor, bool isOutput)
@@ -1216,7 +1150,6 @@ namespace RonJames.DependencyGraphTool
 
                     _outputPortsByNode[node.GUID] = outputPorts.Values.OrderBy(port => port.FieldName, StringComparer.Ordinal).ToList();
                     _inputPortsByNode[node.GUID] = new List<PortDescriptor>();
-                    _editableReferencesByNode[node.GUID] = new List<EditableReferenceInfo>();
                 }
 
                 foreach (var edge in _edges)
@@ -1246,20 +1179,6 @@ namespace RonJames.DependencyGraphTool
                         }
                     }
 
-                    if ((edge.Type == DependencyType.SerializedUnityRef || edge.Type == DependencyType.OdinSerializedRef)
-                        && edge.ActionContext?.OwnerObject != null
-                        && edge.ActionContext.FieldInfo != null
-                        && _editableReferencesByNode.TryGetValue(edge.From.GUID, out var editableRefs)
-                        && !editableRefs.Any(existing => string.Equals(existing.FieldName, fieldName, StringComparison.Ordinal)))
-                    {
-                        editableRefs.Add(new EditableReferenceInfo
-                        {
-                            FieldName = fieldName,
-                            ActionContext = edge.ActionContext,
-                            FieldInfo = edge.ActionContext.FieldInfo,
-                        });
-                    }
-
                     if (_inputPortsByNode.TryGetValue(edge.To.GUID, out var toPorts) && !toPorts.Any(port => string.Equals(port.FieldName, fieldName, StringComparison.Ordinal)))
                     {
                         toPorts.Add(new PortDescriptor { FieldName = fieldName, HasValue = true, Type = edge.Type });
@@ -1276,11 +1195,6 @@ namespace RonJames.DependencyGraphTool
                     if (_inputPortsByNode.TryGetValue(guid, out var inPorts))
                     {
                         inPorts.Sort((a, b) => string.Compare(a.FieldName, b.FieldName, StringComparison.Ordinal));
-                    }
-
-                    if (_editableReferencesByNode.TryGetValue(guid, out var editableRefs))
-                    {
-                        editableRefs.Sort((a, b) => string.Compare(a.FieldName, b.FieldName, StringComparison.Ordinal));
                     }
                 }
             }
@@ -1336,13 +1250,6 @@ namespace RonJames.DependencyGraphTool
                 public bool HasValue;
                 public string ValueSummary;
                 public DependencyType? Type;
-            }
-
-            private sealed class EditableReferenceInfo
-            {
-                public string FieldName;
-                public DependencyActionContext ActionContext;
-                public FieldInfo FieldInfo;
             }
         }
     }
