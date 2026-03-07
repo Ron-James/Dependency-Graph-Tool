@@ -5,6 +5,7 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEditor.UIElements;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using UnityEngine.UIElements;
 
 namespace RonJames.DependencyGraphTool
@@ -60,6 +61,7 @@ namespace RonJames.DependencyGraphTool
         private readonly HashSet<string> _knownNodeGuids = new();
         private readonly Dictionary<string, Color> _typeColorOverrides = new();
         private readonly Dictionary<string, Color> _nodeColorOverrides = new();
+        private readonly HashSet<string> _expandedHierarchyGroups = new();
 
         private DependencyNode _selectedNode;
         private DependencyType? _currentFilter;
@@ -210,10 +212,36 @@ namespace RonJames.DependencyGraphTool
                 return;
             }
 
-            foreach (var node in GetFilteredNodes().OrderBy(node => node.DisplayName, StringComparer.OrdinalIgnoreCase))
+            var monoBehaviourNodes = new Dictionary<GameObject, List<DependencyNode>>();
+            var scriptableObjectNodes = new List<DependencyNode>();
+            var otherNodes = new List<DependencyNode>();
+
+            foreach (var node in GetFilteredNodes())
             {
-                _hierarchyScrollView.Add(CreateNodeRow(node));
+                if (node?.Owner is MonoBehaviour monoBehaviour && monoBehaviour != null)
+                {
+                    if (!monoBehaviourNodes.TryGetValue(monoBehaviour.gameObject, out var gameObjectNodes))
+                    {
+                        gameObjectNodes = new List<DependencyNode>();
+                        monoBehaviourNodes[monoBehaviour.gameObject] = gameObjectNodes;
+                    }
+
+                    gameObjectNodes.Add(node);
+                    continue;
+                }
+
+                if (node?.Owner is ScriptableObject)
+                {
+                    scriptableObjectNodes.Add(node);
+                    continue;
+                }
+
+                otherNodes.Add(node);
             }
+
+            AddHierarchySection(monoBehaviourNodes);
+            AddNodeSection("Scriptable Objects", "group:scriptable", scriptableObjectNodes);
+            AddNodeSection("Other Nodes", "group:other", otherNodes);
         }
 
         private IEnumerable<DependencyNode> GetFilteredNodes()
@@ -274,6 +302,150 @@ namespace RonJames.DependencyGraphTool
             row.Add(toggleButton);
 
             return row;
+        }
+
+        private void AddHierarchySection(Dictionary<GameObject, List<DependencyNode>> nodesByGameObject)
+        {
+            var sectionKey = "group:scene-hierarchy";
+            var hierarchyFoldout = CreateFoldout("Scene Hierarchy (MonoBehaviours)", sectionKey, defaultExpanded: true);
+            _hierarchyScrollView.Add(hierarchyFoldout);
+
+            if (nodesByGameObject.Count == 0)
+            {
+                hierarchyFoldout.Add(CreateInfoLabel("No MonoBehaviour nodes in the current filter."));
+                return;
+            }
+
+            var includedTransforms = new HashSet<Transform>();
+            foreach (var gameObject in nodesByGameObject.Keys)
+            {
+                var current = gameObject.transform;
+                while (current != null)
+                {
+                    includedTransforms.Add(current);
+                    current = current.parent;
+                }
+            }
+
+            var activeScene = SceneManager.GetActiveScene();
+            if (!activeScene.IsValid())
+            {
+                hierarchyFoldout.Add(CreateInfoLabel("Active scene is not valid."));
+                return;
+            }
+
+            foreach (var rootObject in activeScene.GetRootGameObjects())
+            {
+                var branch = BuildGameObjectBranch(rootObject.transform, nodesByGameObject, includedTransforms);
+                if (branch != null)
+                {
+                    hierarchyFoldout.Add(branch);
+                }
+            }
+        }
+
+        private VisualElement BuildGameObjectBranch(
+            Transform transform,
+            Dictionary<GameObject, List<DependencyNode>> nodesByGameObject,
+            HashSet<Transform> includedTransforms)
+        {
+            if (transform == null || !includedTransforms.Contains(transform))
+            {
+                return null;
+            }
+
+            var foldout = CreateFoldout(transform.name, $"go:{GetTransformPath(transform)}", defaultExpanded: false);
+
+            if (nodesByGameObject.TryGetValue(transform.gameObject, out var nodesOnGameObject))
+            {
+                foreach (var node in nodesOnGameObject.OrderBy(node => node.DisplayName, StringComparer.OrdinalIgnoreCase))
+                {
+                    foldout.Add(CreateNodeRow(node));
+                }
+            }
+
+            for (var childIndex = 0; childIndex < transform.childCount; childIndex++)
+            {
+                var childBranch = BuildGameObjectBranch(transform.GetChild(childIndex), nodesByGameObject, includedTransforms);
+                if (childBranch != null)
+                {
+                    foldout.Add(childBranch);
+                }
+            }
+
+            return foldout;
+        }
+
+        private void AddNodeSection(string title, string sectionKey, List<DependencyNode> nodes)
+        {
+            var foldout = CreateFoldout(title, sectionKey, defaultExpanded: true);
+            _hierarchyScrollView.Add(foldout);
+
+            if (nodes.Count == 0)
+            {
+                foldout.Add(CreateInfoLabel("No nodes in the current filter."));
+                return;
+            }
+
+            foreach (var node in nodes.OrderBy(node => node.DisplayName, StringComparer.OrdinalIgnoreCase))
+            {
+                foldout.Add(CreateNodeRow(node));
+            }
+        }
+
+        private Foldout CreateFoldout(string title, string groupKey, bool defaultExpanded)
+        {
+            var isExpanded = _expandedHierarchyGroups.Contains(groupKey) || defaultExpanded;
+            var foldout = new Foldout
+            {
+                text = title,
+                value = isExpanded,
+            };
+
+            if (foldout.value)
+            {
+                _expandedHierarchyGroups.Add(groupKey);
+            }
+
+            foldout.RegisterValueChangedCallback(evt =>
+            {
+                if (evt.newValue)
+                {
+                    _expandedHierarchyGroups.Add(groupKey);
+                }
+                else
+                {
+                    _expandedHierarchyGroups.Remove(groupKey);
+                }
+            });
+
+            return foldout;
+        }
+
+        private static string GetTransformPath(Transform transform)
+        {
+            var names = new List<string>();
+            var current = transform;
+            while (current != null)
+            {
+                names.Add(current.name);
+                current = current.parent;
+            }
+
+            names.Reverse();
+            return string.Join("/", names);
+        }
+
+        private static Label CreateInfoLabel(string message)
+        {
+            return new Label(message)
+            {
+                style =
+                {
+                    unityFontStyleAndWeight = FontStyle.Italic,
+                    whiteSpace = WhiteSpace.Normal,
+                },
+            };
         }
 
         private void FocusNode(DependencyNode node)
@@ -438,9 +610,48 @@ namespace RonJames.DependencyGraphTool
                 return;
             }
 
-            var typeName = TypeUtility.GetFriendlyTypeName(node.Owner?.GetType());
-            _detailsLabel.text = $"Name: {node.DisplayName}\nType: {typeName}\nGUID: {node.GUID}";
+            _detailsLabel.text = BuildNodeDetailsText(node);
             _nodeColorField.SetValueWithoutNotify(GetNodeDisplayColor(node));
+        }
+
+        private string BuildNodeDetailsText(DependencyNode node)
+        {
+            var typeName = TypeUtility.GetFriendlyTypeName(node.Owner?.GetType());
+            var lines = new List<string>
+            {
+                $"Name: {node.DisplayName}",
+                $"Type: {typeName}",
+                $"GUID: {node.GUID}",
+            };
+
+            if (node.FieldSlots.Count > 0)
+            {
+                lines.Add("\nFields:");
+                foreach (var slot in node.FieldSlots.OrderBy(slot => slot.Name, StringComparer.OrdinalIgnoreCase))
+                {
+                    if (slot == null)
+                    {
+                        continue;
+                    }
+
+                    var direction = slot.IsOutput ? "OUT" : "IN";
+                    var state = slot.HasValue ? "filled" : "empty";
+                    var summary = string.IsNullOrWhiteSpace(slot.ValueSummary) ? string.Empty : $" ({slot.ValueSummary})";
+                    lines.Add($"- {direction} {slot.Name}: {state}{summary}");
+                }
+            }
+
+            var outgoingEdges = _model?.Edges?.Where(edge => edge.From == node).ToList() ?? new List<DependencyEdge>();
+            if (outgoingEdges.Count > 0)
+            {
+                lines.Add("\nReferences:");
+                foreach (var edge in outgoingEdges.OrderBy(edge => edge.FieldName, StringComparer.OrdinalIgnoreCase))
+                {
+                    lines.Add($"- {edge.FieldName} -> {edge.To.DisplayName}");
+                }
+            }
+
+            return string.Join("\n", lines);
         }
 
         private void ApplyColorToSelectedNode(Color color)
