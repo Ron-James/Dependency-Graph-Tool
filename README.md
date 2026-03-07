@@ -16,6 +16,10 @@ In Unity, open:
 
 `Tools > Scene Dependency Graph`
 
+For migration work-in-progress, there is also a separate UI Toolkit surface at:
+
+`Tools > Scene Dependency Graph (UI Toolkit WIP)`
+
 ## What it scans
 
 - Serialized Unity object references
