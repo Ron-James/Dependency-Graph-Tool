@@ -4,6 +4,7 @@ All notable changes to this package are documented in this file.
 
 ## [Unreleased]
 ### Changed
+- Removed hard dependency on `com.unity.graphtoolkit` so the package can be imported into projects that do not have Graph Toolkit available.
 - Removed `IDependencyEmitter` / `IDependencyEmitContext` interfaces from runtime and editor package code.
 - Scene dependency discovery now relies on built-in scanners only.
 

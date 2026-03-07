@@ -20,6 +20,8 @@ For migration work-in-progress, there is also a separate UI Toolkit surface at:
 
 `Tools > Scene Dependency Graph (UI Toolkit WIP)`
 
+> The UI Toolkit WIP window is optional and only appears when Unity's `com.unity.graphtoolkit` package is installed in your project.
+
 ## What it scans
 
 - Serialized Unity object references
