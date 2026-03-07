@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEditor.UIElements;
@@ -116,6 +117,7 @@ namespace RonJames.DependencyGraphTool
             _canvas.style.minWidth = 3000f;
             _canvas.style.minHeight = 3000f;
             _canvas.OnNodeSelected += ShowNodeDetails;
+            _canvas.OnGraphMutationRequested += RefreshGraph;
             graphScrollView.Add(_canvas);
 
             splitCenterRight.Add(graphScrollView);
@@ -904,6 +906,7 @@ namespace RonJames.DependencyGraphTool
             private string _selectedNodeGuid;
 
             public Action<DependencyNode> OnNodeSelected;
+            public Action OnGraphMutationRequested;
 
             public ToolkitGraphCanvas()
             {
