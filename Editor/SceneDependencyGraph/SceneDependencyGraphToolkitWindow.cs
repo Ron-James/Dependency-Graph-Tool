@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEditor.UIElements;
@@ -114,6 +115,7 @@ namespace RonJames.DependencyGraphTool
             _canvas.style.minWidth = 3000f;
             _canvas.style.minHeight = 3000f;
             _canvas.OnNodeSelected += ShowNodeDetails;
+            _canvas.OnGraphMutationRequested += RefreshGraph;
             graphScrollView.Add(_canvas);
 
             splitCenterRight.Add(graphScrollView);
@@ -677,18 +679,24 @@ namespace RonJames.DependencyGraphTool
         private sealed class ToolkitGraphCanvas : VisualElement
         {
             private const float NodeWidth = 260f;
-            private const float NodeHeight = 96f;
+            private const float MinimumNodeHeight = 112f;
             private const float HorizontalSpacing = 320f;
-            private const float VerticalSpacing = 140f;
+            private const float VerticalSpacing = 32f;
 
             private readonly Dictionary<string, Rect> _nodeRects = new();
             private readonly Dictionary<string, VisualElement> _nodeCards = new();
+            private readonly Dictionary<string, VisualElement> _portVisualByKey = new();
+            private readonly Dictionary<string, Vector2> _portAnchorByKey = new();
+            private readonly Dictionary<string, List<PortDescriptor>> _outputPortsByNode = new();
+            private readonly Dictionary<string, List<PortDescriptor>> _inputPortsByNode = new();
+            private readonly Dictionary<string, List<EditableReferenceInfo>> _editableReferencesByNode = new();
             private readonly List<DependencyEdge> _edges = new();
             private readonly Dictionary<string, DependencyNode> _nodesByGuid = new();
 
             private string _selectedNodeGuid;
 
             public Action<DependencyNode> OnNodeSelected;
+            public Action OnGraphMutationRequested;
 
             public ToolkitGraphCanvas()
             {
@@ -706,6 +714,11 @@ namespace RonJames.DependencyGraphTool
                 Clear();
                 _nodeRects.Clear();
                 _nodeCards.Clear();
+                _portVisualByKey.Clear();
+                _portAnchorByKey.Clear();
+                _outputPortsByNode.Clear();
+                _inputPortsByNode.Clear();
+                _editableReferencesByNode.Clear();
                 _edges.Clear();
                 _nodesByGuid.Clear();
                 _selectedNodeGuid = null;
@@ -752,6 +765,8 @@ namespace RonJames.DependencyGraphTool
 
                     _edges.Add(edge);
                 }
+
+                BuildPortDescriptors(visibleNodes);
 
                 LayoutNodes(visibleNodes);
 
@@ -855,7 +870,221 @@ namespace RonJames.DependencyGraphTool
                 subtitle.style.marginTop = 4f;
                 card.Add(subtitle);
 
+                var inputPorts = _inputPortsByNode.TryGetValue(node.GUID, out var inPorts) ? inPorts : null;
+                var outputPorts = _outputPortsByNode.TryGetValue(node.GUID, out var outPorts) ? outPorts : null;
+                if ((inputPorts != null && inputPorts.Count > 0) || (outputPorts != null && outputPorts.Count > 0))
+                {
+                    var portRows = new VisualElement();
+                    portRows.style.marginTop = 6f;
+                    portRows.style.flexGrow = 1f;
+                    card.Add(portRows);
+
+                    var maxRows = Math.Max(inputPorts?.Count ?? 0, outputPorts?.Count ?? 0);
+                    for (var row = 0; row < maxRows; row++)
+                    {
+                        var rowElement = new VisualElement { style = { flexDirection = FlexDirection.Row, minHeight = 18f } };
+                        rowElement.style.alignItems = Align.Center;
+
+                        if (inputPorts != null && row < inputPorts.Count)
+                        {
+                            var inPort = CreatePortVisual(node.GUID, inputPorts[row], isOutput: false);
+                            rowElement.Add(inPort);
+                        }
+                        else
+                        {
+                            rowElement.Add(new VisualElement { style = { flexGrow = 1f } });
+                        }
+
+                        if (outputPorts != null && row < outputPorts.Count)
+                        {
+                            var outPort = CreatePortVisual(node.GUID, outputPorts[row], isOutput: true);
+                            rowElement.Add(outPort);
+                        }
+                        else
+                        {
+                            rowElement.Add(new VisualElement { style = { flexGrow = 1f } });
+                        }
+
+                        portRows.Add(rowElement);
+                    }
+                }
+
+                var editableRefs = _editableReferencesByNode.TryGetValue(node.GUID, out var refs) ? refs : null;
+                if (editableRefs != null && editableRefs.Count > 0)
+                {
+                    var foldout = new Foldout
+                    {
+                        text = "References",
+                        value = false,
+                    };
+                    foldout.style.marginTop = 4f;
+
+                    foreach (var editableReference in editableRefs)
+                    {
+                        var objectField = new ObjectField(editableReference.FieldName)
+                        {
+                            allowSceneObjects = true,
+                            objectType = editableReference.FieldInfo?.FieldType ?? typeof(UnityEngine.Object),
+                            value = GetCurrentReferenceValue(editableReference),
+                        };
+                        objectField.tooltip = "Drag/drop to reassign this serialized reference.";
+                        objectField.RegisterValueChangedCallback(evt => ApplyReferenceChange(editableReference, evt.newValue));
+                        foldout.Add(objectField);
+                    }
+
+                    card.Add(foldout);
+                }
+
                 return card;
+            }
+
+            private static UnityEngine.Object GetCurrentReferenceValue(EditableReferenceInfo info)
+            {
+                if (info?.ActionContext?.OwnerObject == null || info.FieldInfo == null)
+                {
+                    return null;
+                }
+
+                return info.FieldInfo.GetValue(info.ActionContext.OwnerObject) as UnityEngine.Object;
+            }
+
+            private void ApplyReferenceChange(EditableReferenceInfo info, UnityEngine.Object newValue)
+            {
+                if (info?.ActionContext?.OwnerObject == null || info.FieldInfo == null)
+                {
+                    return;
+                }
+
+                var fieldType = info.FieldInfo.FieldType;
+                if (!typeof(UnityEngine.Object).IsAssignableFrom(fieldType))
+                {
+                    return;
+                }
+
+                if (newValue != null && !fieldType.IsInstanceOfType(newValue))
+                {
+                    return;
+                }
+
+                info.FieldInfo.SetValue(info.ActionContext.OwnerObject, newValue);
+                EditorUtility.SetDirty(info.ActionContext.OwnerObject);
+                if (info.ActionContext.OwnerObject is Component component)
+                {
+                    EditorSceneManager.MarkSceneDirty(component.gameObject.scene);
+                }
+
+                OnGraphMutationRequested?.Invoke();
+            }
+
+            private VisualElement CreatePortVisual(string nodeGuid, PortDescriptor descriptor, bool isOutput)
+            {
+                var portKey = GetPortKey(nodeGuid, descriptor.FieldName, isOutput);
+                var row = new VisualElement { style = { flexDirection = FlexDirection.Row, flexGrow = 1f } };
+                row.style.alignItems = Align.Center;
+                row.style.justifyContent = isOutput ? Justify.FlexEnd : Justify.FlexStart;
+
+                var bubble = new VisualElement();
+                bubble.style.width = 8f;
+                bubble.style.height = 8f;
+                bubble.style.borderTopLeftRadius = 4f;
+                bubble.style.borderTopRightRadius = 4f;
+                bubble.style.borderBottomLeftRadius = 4f;
+                bubble.style.borderBottomRightRadius = 4f;
+                bubble.style.backgroundColor = isOutput
+                    ? (descriptor.HasValue ? new Color(0.3f, 0.8f, 0.4f) : new Color(0.75f, 0.45f, 0.2f))
+                    : new Color(0.35f, 0.65f, 1f);
+
+                var label = new Label(GetPortLabel(descriptor, isOutput));
+                label.style.fontSize = 9f;
+                label.style.color = new Color(0.85f, 0.85f, 0.85f, 1f);
+                label.style.unityTextAlign = isOutput ? TextAnchor.MiddleRight : TextAnchor.MiddleLeft;
+                label.style.maxWidth = 108f;
+
+                if (!isOutput)
+                {
+                    row.Add(bubble);
+                    label.style.marginLeft = 3f;
+                }
+
+                var iconOrBadge = CreatePortTypeIcon(descriptor);
+                if (iconOrBadge != null)
+                {
+                    row.Add(iconOrBadge);
+                }
+
+                row.Add(label);
+
+                if (isOutput)
+                {
+                    row.Add(bubble);
+                    bubble.style.marginLeft = 3f;
+                }
+
+                row.RegisterCallback<GeometryChangedEvent>(_ => UpdatePortAnchor(portKey, row, isOutput));
+                _portVisualByKey[portKey] = row;
+                return row;
+            }
+
+            private static string GetPortLabel(PortDescriptor descriptor, bool isOutput)
+            {
+                var prefix = isOutput ? "OUT" : "IN";
+                var safeFieldName = string.IsNullOrWhiteSpace(descriptor.FieldName) ? "unknown" : descriptor.FieldName;
+                var suffix = string.IsNullOrWhiteSpace(descriptor.ValueSummary) ? string.Empty : $" ({descriptor.ValueSummary})";
+                var emptyMarker = isOutput && !descriptor.HasValue ? " [empty]" : string.Empty;
+                return $"{prefix}: {safeFieldName}{emptyMarker}{suffix}";
+            }
+
+            private static VisualElement CreatePortTypeIcon(PortDescriptor descriptor)
+            {
+                if (descriptor.Type == DependencyType.SerializeReferenceManaged)
+                {
+                    var badge = new Label("C#");
+                    badge.style.fontSize = 8f;
+                    badge.style.paddingLeft = 3f;
+                    badge.style.paddingRight = 3f;
+                    badge.style.marginLeft = 3f;
+                    badge.style.marginRight = 3f;
+                    badge.style.color = Color.white;
+                    badge.style.backgroundColor = new Color(0.14f, 0.14f, 0.14f, 0.9f);
+                    badge.style.borderTopLeftRadius = 2f;
+                    badge.style.borderTopRightRadius = 2f;
+                    badge.style.borderBottomLeftRadius = 2f;
+                    badge.style.borderBottomRightRadius = 2f;
+                    return badge;
+                }
+
+                if (descriptor.Type == DependencyType.SerializedUnityRef || descriptor.Type == DependencyType.OdinSerializedRef)
+                {
+                    var icon = new Image
+                    {
+                        image = EditorGUIUtility.IconContent("cs Script Icon")?.image,
+                        scaleMode = ScaleMode.ScaleToFit,
+                    };
+                    icon.style.width = 11f;
+                    icon.style.height = 11f;
+                    icon.style.marginLeft = 3f;
+                    icon.style.marginRight = 3f;
+                    return icon;
+                }
+
+                return null;
+            }
+
+            private void UpdatePortAnchor(string portKey, VisualElement portRow, bool isOutput)
+            {
+                var localRect = contentRect;
+                var worldCenter = portRow.worldBound.center;
+                var localCenter = WorldToLocal(worldCenter);
+                var x = isOutput ? localCenter.x + (portRow.worldBound.width * 0.5f) : localCenter.x - (portRow.worldBound.width * 0.5f);
+                x = Mathf.Clamp(x, localRect.xMin, localRect.xMax);
+                _portAnchorByKey[portKey] = new Vector2(x, localCenter.y);
+                MarkDirtyRepaint();
+            }
+
+            private static string GetPortKey(string nodeGuid, string fieldName, bool isOutput)
+            {
+                var safeFieldName = string.IsNullOrWhiteSpace(fieldName) ? "unknown" : fieldName;
+                return $"{nodeGuid}|{safeFieldName}|{(isOutput ? "OUT" : "IN")}";
             }
 
             private void SelectNode(string guid)
@@ -937,13 +1166,122 @@ namespace RonJames.DependencyGraphTool
                     }
                 }
 
-                var columns = new Dictionary<int, int>();
+                var columnsHeight = new Dictionary<int, float>();
                 foreach (var node in nodes)
                 {
                     var column = depth.TryGetValue(node.GUID, out var col) ? col : 0;
-                    columns.TryGetValue(column, out var row);
-                    columns[column] = row + 1;
-                    _nodeRects[node.GUID] = new Rect(80f + (column * HorizontalSpacing), 80f + (row * VerticalSpacing), NodeWidth, NodeHeight);
+                    var nodeHeight = GetNodeHeight(node.GUID);
+                    if (!columnsHeight.TryGetValue(column, out var y))
+                    {
+                        y = 80f;
+                    }
+
+                    _nodeRects[node.GUID] = new Rect(80f + (column * HorizontalSpacing), y, NodeWidth, nodeHeight);
+                    columnsHeight[column] = y + nodeHeight + VerticalSpacing;
+                }
+            }
+
+            private float GetNodeHeight(string nodeGuid)
+            {
+                var inputCount = _inputPortsByNode.TryGetValue(nodeGuid, out var inputPorts) ? inputPorts.Count : 0;
+                var outputCount = _outputPortsByNode.TryGetValue(nodeGuid, out var outputPorts) ? outputPorts.Count : 0;
+                var rowCount = Math.Max(inputCount, outputCount);
+                return Math.Max(MinimumNodeHeight, 70f + (rowCount * 18f));
+            }
+
+            private void BuildPortDescriptors(IReadOnlyList<DependencyNode> visibleNodes)
+            {
+                var visibleGuids = new HashSet<string>(visibleNodes.Select(node => node.GUID));
+                foreach (var node in visibleNodes)
+                {
+                    var outputPorts = new Dictionary<string, PortDescriptor>(StringComparer.Ordinal);
+                    if (node.FieldSlots != null)
+                    {
+                        foreach (var fieldSlot in node.FieldSlots)
+                        {
+                            if (fieldSlot == null || !fieldSlot.IsOutput)
+                            {
+                                continue;
+                            }
+
+                            var safeFieldName = string.IsNullOrWhiteSpace(fieldSlot.Name) ? "unknown" : fieldSlot.Name;
+                            outputPorts[safeFieldName] = new PortDescriptor
+                            {
+                                FieldName = safeFieldName,
+                                HasValue = fieldSlot.HasValue,
+                                ValueSummary = fieldSlot.ValueSummary,
+                            };
+                        }
+                    }
+
+                    _outputPortsByNode[node.GUID] = outputPorts.Values.OrderBy(port => port.FieldName, StringComparer.Ordinal).ToList();
+                    _inputPortsByNode[node.GUID] = new List<PortDescriptor>();
+                    _editableReferencesByNode[node.GUID] = new List<EditableReferenceInfo>();
+                }
+
+                foreach (var edge in _edges)
+                {
+                    if (edge?.From == null || edge.To == null)
+                    {
+                        continue;
+                    }
+
+                    if (!visibleGuids.Contains(edge.From.GUID) || !visibleGuids.Contains(edge.To.GUID))
+                    {
+                        continue;
+                    }
+
+                    var fieldName = string.IsNullOrWhiteSpace(edge.FieldName) ? "unknown" : edge.FieldName;
+
+                    if (_outputPortsByNode.TryGetValue(edge.From.GUID, out var fromPorts))
+                    {
+                        var existingOutput = fromPorts.FirstOrDefault(port => string.Equals(port.FieldName, fieldName, StringComparison.Ordinal));
+                        if (existingOutput == null)
+                        {
+                            fromPorts.Add(new PortDescriptor { FieldName = fieldName, HasValue = true, Type = edge.Type });
+                        }
+                        else if (!existingOutput.Type.HasValue)
+                        {
+                            existingOutput.Type = edge.Type;
+                        }
+                    }
+
+                    if ((edge.Type == DependencyType.SerializedUnityRef || edge.Type == DependencyType.OdinSerializedRef)
+                        && edge.ActionContext?.OwnerObject != null
+                        && edge.ActionContext.FieldInfo != null
+                        && _editableReferencesByNode.TryGetValue(edge.From.GUID, out var editableRefs)
+                        && !editableRefs.Any(existing => string.Equals(existing.FieldName, fieldName, StringComparison.Ordinal)))
+                    {
+                        editableRefs.Add(new EditableReferenceInfo
+                        {
+                            FieldName = fieldName,
+                            ActionContext = edge.ActionContext,
+                            FieldInfo = edge.ActionContext.FieldInfo,
+                        });
+                    }
+
+                    if (_inputPortsByNode.TryGetValue(edge.To.GUID, out var toPorts) && !toPorts.Any(port => string.Equals(port.FieldName, fieldName, StringComparison.Ordinal)))
+                    {
+                        toPorts.Add(new PortDescriptor { FieldName = fieldName, HasValue = true, Type = edge.Type });
+                    }
+                }
+
+                foreach (var guid in visibleGuids)
+                {
+                    if (_outputPortsByNode.TryGetValue(guid, out var outPorts))
+                    {
+                        outPorts.Sort((a, b) => string.Compare(a.FieldName, b.FieldName, StringComparison.Ordinal));
+                    }
+
+                    if (_inputPortsByNode.TryGetValue(guid, out var inPorts))
+                    {
+                        inPorts.Sort((a, b) => string.Compare(a.FieldName, b.FieldName, StringComparison.Ordinal));
+                    }
+
+                    if (_editableReferencesByNode.TryGetValue(guid, out var editableRefs))
+                    {
+                        editableRefs.Sort((a, b) => string.Compare(a.FieldName, b.FieldName, StringComparison.Ordinal));
+                    }
                 }
             }
 
@@ -959,8 +1297,15 @@ namespace RonJames.DependencyGraphTool
                         continue;
                     }
 
-                    var start = new Vector2(fromRect.xMax, fromRect.center.y);
-                    var end = new Vector2(toRect.xMin, toRect.center.y);
+                    var outputPortKey = GetPortKey(edge.From.GUID, edge.FieldName, isOutput: true);
+                    var inputPortKey = GetPortKey(edge.To.GUID, edge.FieldName, isOutput: false);
+
+                    var start = _portAnchorByKey.TryGetValue(outputPortKey, out var outputAnchor)
+                        ? outputAnchor
+                        : new Vector2(fromRect.xMax, fromRect.center.y);
+                    var end = _portAnchorByKey.TryGetValue(inputPortKey, out var inputAnchor)
+                        ? inputAnchor
+                        : new Vector2(toRect.xMin, toRect.center.y);
                     var controlOffset = Mathf.Max(40f, Mathf.Abs(end.x - start.x) * 0.4f);
                     var c1 = new Vector2(start.x + controlOffset, start.y);
                     var c2 = new Vector2(end.x - controlOffset, end.y);
@@ -983,6 +1328,21 @@ namespace RonJames.DependencyGraphTool
                     DependencyType.OdinSerializedRef => new Color(0.7f, 0.4f, 1f),
                     _ => Color.white,
                 };
+            }
+
+            private sealed class PortDescriptor
+            {
+                public string FieldName;
+                public bool HasValue;
+                public string ValueSummary;
+                public DependencyType? Type;
+            }
+
+            private sealed class EditableReferenceInfo
+            {
+                public string FieldName;
+                public DependencyActionContext ActionContext;
+                public FieldInfo FieldInfo;
             }
         }
     }
