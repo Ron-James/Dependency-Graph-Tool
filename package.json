@@ -1,6 +1,6 @@
 {
   "name": "com.ronjames.dependency-graph-tool",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "displayName": "Dependency Graph Tool",
   "description": "Editor tooling to scan the active Unity scene and visualize object and member dependencies as a graph.",
   "unity": "2021.3",
@@ -16,9 +16,6 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/Ron-James/Dependency-Graph-Tool.git"
-  },
-  "dependencies": {
-    "com.unity.graphtoolkit": "0.1.0"
   },
   "documentationUrl": "https://github.com/Ron-James/Dependency-Graph-Tool.git#readme"
 }
