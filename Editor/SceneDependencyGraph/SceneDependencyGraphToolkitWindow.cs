@@ -1198,12 +1198,11 @@ namespace RonJames.DependencyGraphTool
                 var titleRow = new VisualElement { style = { flexDirection = FlexDirection.Row } };
                 titleRow.style.alignItems = Align.Center;
 
-                var icon = new Image();
-                icon.style.width = _iconSize;
-                icon.style.height = _iconSize;
-                icon.style.marginRight = 4f;
-                icon.image = ResolveNodeIcon(node);
-                titleRow.Add(icon);
+                var iconOrBadge = CreateNodeTypeIcon(node, _textSize, _iconSize);
+                if (iconOrBadge != null)
+                {
+                    titleRow.Add(iconOrBadge);
+                }
 
                 var title = new Label(string.IsNullOrWhiteSpace(node.DisplayName) ? "<Unnamed>" : node.DisplayName);
                 title.style.unityFontStyleAndWeight = FontStyle.Bold;
@@ -1431,22 +1430,21 @@ namespace RonJames.DependencyGraphTool
                 OnNodeSelected?.Invoke(_nodesByGuid.TryGetValue(guid, out var node) ? node : null);
             }
 
-            private static Texture ResolveNodeIcon(DependencyNode node)
+            private static VisualElement CreateNodeTypeIcon(DependencyNode node, float textSize, float iconSize)
             {
                 var ownerType = node.Owner?.GetType();
                 if (node.Owner is UnityEngine.Object unityObject)
                 {
-                    if (unityObject is Component)
-                    {
-                        return EditorGUIUtility.IconContent("cs Script Icon")?.image;
-                    }
+                    var iconTexture = unityObject is Component
+                        ? EditorGUIUtility.IconContent("cs Script Icon")?.image
+                        : EditorGUIUtility.ObjectContent(unityObject, ownerType)?.image
+                          ?? EditorGUIUtility.ObjectContent(null, ownerType)?.image
+                          ?? EditorGUIUtility.IconContent("Prefab Icon")?.image;
 
-                    return EditorGUIUtility.ObjectContent(unityObject, ownerType)?.image
-                           ?? EditorGUIUtility.ObjectContent(null, ownerType)?.image
-                           ?? EditorGUIUtility.IconContent("Prefab Icon")?.image;
+                    return CreateTypeIcon(iconTexture, iconSize);
                 }
 
-                return EditorGUIUtility.IconContent("cs Script Icon")?.image;
+                return CreateManagedTypeBadge(textSize, iconSize);
             }
 
             private void LayoutNodes(List<DependencyNode> nodes)
