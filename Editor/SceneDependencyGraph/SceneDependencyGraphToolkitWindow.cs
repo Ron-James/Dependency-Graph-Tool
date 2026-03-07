@@ -1402,13 +1402,32 @@ namespace RonJames.DependencyGraphTool
             private void UpdatePortAnchor(string portKey, VisualElement portRow, bool isOutput)
             {
                 var localRect = contentRect;
+                if (localRect.width <= 0f || localRect.height <= 0f)
+                {
+                    return;
+                }
+
                 var worldCenter = portRow.worldBound.center;
                 var localCenter = new Vector2(
                     worldCenter.x - worldBound.xMin,
                     worldCenter.y - worldBound.yMin);
+
+                if (!float.IsFinite(localCenter.x) || !float.IsFinite(localCenter.y))
+                {
+                    return;
+                }
+
                 var x = isOutput ? localCenter.x + (portRow.worldBound.width * 0.5f) : localCenter.x - (portRow.worldBound.width * 0.5f);
                 x = Mathf.Clamp(x, localRect.xMin, localRect.xMax);
-                _portAnchorByKey[portKey] = new Vector2(x, localCenter.y);
+                var newAnchor = new Vector2(x, localCenter.y);
+
+                if (_portAnchorByKey.TryGetValue(portKey, out var existingAnchor) &&
+                    Vector2.SqrMagnitude(existingAnchor - newAnchor) < 0.01f)
+                {
+                    return;
+                }
+
+                _portAnchorByKey[portKey] = newAnchor;
                 MarkDirtyRepaint();
             }
 
