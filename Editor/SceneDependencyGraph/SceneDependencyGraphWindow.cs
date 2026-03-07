@@ -243,6 +243,7 @@ namespace RonJames.DependencyGraphTool
             _graphView.OnNodePositionChanged += SaveCurrentNodePositions;
             _graphView.OnNodeSelectionChanged += ShowNodeDetails;
             _graphView.OnEdgeSelectionChanged += ShowEdgeDetails;
+            _graphView.OnPortReferenceChanged += ApplyPortReferenceChange;
             splitCenterRight.Add(_graphView);
             splitCenterRight.Add(CreateRightPane());
 
@@ -321,6 +322,29 @@ namespace RonJames.DependencyGraphTool
 
         private DependencyNode _selectedNode;
         private DependencyEdge _selectedEdge;
+
+
+        private void ApplyPortReferenceChange(string nodeGuid, string fieldName, UnityEngine.Object newValue)
+        {
+            if (_model == null || string.IsNullOrWhiteSpace(nodeGuid) || string.IsNullOrWhiteSpace(fieldName))
+            {
+                return;
+            }
+
+            var node = _model.Nodes.FirstOrDefault(candidate => string.Equals(candidate.GUID, nodeGuid, StringComparison.Ordinal));
+            if (node == null)
+            {
+                return;
+            }
+
+            var slot = node.FieldSlots.FirstOrDefault(candidate => string.Equals(candidate.Name, fieldName, StringComparison.Ordinal));
+            if (slot == null)
+            {
+                return;
+            }
+
+            ApplyNodeSlotReference(node, slot, newValue);
+        }
 
         private void ShowNodeDetails(DependencyNode node)
         {
