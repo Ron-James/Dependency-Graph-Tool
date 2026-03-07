@@ -127,7 +127,7 @@ namespace RonJames.DependencyGraphTool
                         continue;
                     }
 
-                    GetOrCreatePort(node.GUID, fieldSlot.Name, visualNode, Direction.Output, fieldSlot.HasValue, fieldSlot.ValueSummary);
+                    GetOrCreatePort(node.GUID, fieldSlot.Name, visualNode, Direction.Output, fieldSlot.HasValue, fieldSlot.ValueSummary, fieldSlot);
                 }
             }
 
@@ -679,7 +679,14 @@ namespace RonJames.DependencyGraphTool
             visualNode.titleContainer.Insert(0, badge);
         }
 
-        private Port GetOrCreatePort(string nodeGuid, string fieldName, Node node, Direction direction, bool hasValue, string valueSummary)
+        private Port GetOrCreatePort(
+            string nodeGuid,
+            string fieldName,
+            Node node,
+            Direction direction,
+            bool hasValue,
+            string valueSummary,
+            DependencyFieldSlot fieldSlot = null)
         {
             var safeFieldName = string.IsNullOrWhiteSpace(fieldName) ? "unknown" : fieldName;
             var lookup = direction == Direction.Output ? _outputPortsByNodeAndField : _inputPortsByNodeAndField;
@@ -706,6 +713,11 @@ namespace RonJames.DependencyGraphTool
                 var emptyMarker = hasValue ? string.Empty : " [empty]";
                 newPort.portName = $"OUT: {safeFieldName}{emptyMarker}{suffix}";
                 newPort.portColor = hasValue ? new Color(0.3f, 0.8f, 0.4f) : new Color(0.75f, 0.45f, 0.2f);
+
+                if (fieldSlot != null)
+                {
+                    AddUnityReferenceField(newPort, fieldSlot);
+                }
             }
             else
             {
@@ -717,6 +729,35 @@ namespace RonJames.DependencyGraphTool
             node.RefreshExpandedState();
             ports[safeFieldName] = newPort;
             return newPort;
+        }
+
+        private static void AddUnityReferenceField(Port port, DependencyFieldSlot fieldSlot)
+        {
+            var fieldType = fieldSlot.ValueType;
+            var isUnityObjectType = fieldType != null && typeof(UnityEngine.Object).IsAssignableFrom(fieldType);
+            if (!isUnityObjectType && fieldSlot.UnityReferenceValue == null)
+            {
+                return;
+            }
+
+            var objectType = isUnityObjectType ? fieldType : typeof(UnityEngine.Object);
+            var objectField = new ObjectField
+            {
+                objectType = objectType,
+                allowSceneObjects = true,
+                value = fieldSlot.UnityReferenceValue,
+                tooltip = "Serialized Unity reference on this field",
+            };
+
+            objectField.SetEnabled(false);
+            objectField.style.flexGrow = 1f;
+            objectField.style.maxWidth = 150f;
+            objectField.style.minWidth = 100f;
+            objectField.style.marginLeft = 6f;
+            objectField.style.marginRight = 4f;
+            objectField.style.unityTextAlign = TextAnchor.MiddleLeft;
+
+            port.Add(objectField);
         }
 
         private Color NodeColor(DependencyNode node)
