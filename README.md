@@ -29,6 +29,8 @@ In Unity, open:
 
 For extension details, see [Documentation~/SCENE_DEPENDENCY_GRAPH.md](Documentation~/SCENE_DEPENDENCY_GRAPH.md).
 
+If you want to migrate from `UnityEditor.Experimental.GraphView` to Unity Graph Toolkit (`com.unity.graphtoolkit`), see [Documentation~/GRAPH_TOOLS_FOUNDATION_MIGRATION.md](Documentation~/GRAPH_TOOLS_FOUNDATION_MIGRATION.md).
+
 ## Large scene workflow (already supported)
 
 - Nodes are hidden by default on first load for each scene.
