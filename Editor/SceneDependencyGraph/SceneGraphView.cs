@@ -28,6 +28,7 @@ namespace RonJames.DependencyGraphTool
         public Action<DependencyNode> OnNodeSelectionChanged;
         public Action<DependencyEdge> OnEdgeSelectionChanged;
         public Action OnNodePositionChanged;
+        public Action<string, string, UnityEngine.Object> OnPortReferenceChanged;
 
         public float HorizontalSpacing { get; set; } = DefaultHorizontalSpacing;
         public float VerticalSpacing { get; set; } = DefaultVerticalSpacing;
@@ -717,7 +718,7 @@ namespace RonJames.DependencyGraphTool
 
                 if (fieldSlot != null)
                 {
-                    AddUnityReferenceField(newPort, fieldSlot);
+                    AddUnityReferenceField(nodeGuid, safeFieldName, newPort, fieldSlot);
                 }
             }
             else
@@ -732,7 +733,7 @@ namespace RonJames.DependencyGraphTool
             return newPort;
         }
 
-        private static void AddUnityReferenceField(Port port, DependencyFieldSlot fieldSlot)
+        private void AddUnityReferenceField(string nodeGuid, string fieldName, Port port, DependencyFieldSlot fieldSlot)
         {
             var fieldType = fieldSlot.ValueType;
             var isUnityObjectType = fieldType != null && typeof(UnityEngine.Object).IsAssignableFrom(fieldType);
@@ -747,16 +748,19 @@ namespace RonJames.DependencyGraphTool
                 objectType = objectType,
                 allowSceneObjects = true,
                 value = fieldSlot.UnityReferenceValue,
-                tooltip = "Serialized Unity reference on this field",
+                tooltip = "Drag and drop a Unity object to reassign this serialized reference.",
             };
 
-            objectField.SetEnabled(false);
             objectField.style.flexGrow = 1f;
             objectField.style.maxWidth = 150f;
             objectField.style.minWidth = 100f;
             objectField.style.marginLeft = 6f;
             objectField.style.marginRight = 4f;
             objectField.style.unityTextAlign = TextAnchor.MiddleLeft;
+            objectField.RegisterValueChangedCallback(evt =>
+            {
+                OnPortReferenceChanged?.Invoke(nodeGuid, fieldName, evt.newValue as UnityEngine.Object);
+            });
 
             port.Add(objectField);
         }
