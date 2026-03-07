@@ -96,8 +96,6 @@ namespace RonJames.DependencyGraphTool
         private FloatField _groupSpacingField;
         private Label _fontSizeLabel;
         private Slider _iconSizeSlider;
-        private Label _nodeGraphProcessorStatusLabel;
-        private Label _nodeGraphProcessorPanelStatusLabel;
         private float _nodeFontSize = DefaultNodeFontSize;
         private float _nodeIconSize = DefaultNodeIconSize;
         private float _horizontalSpacing = 360f;
@@ -113,7 +111,6 @@ namespace RonJames.DependencyGraphTool
         private readonly Dictionary<string, Color> _nodeTypeColorOverrides = new();
         private readonly Dictionary<string, Rect> _savedNodePositions = new();
         private readonly Dictionary<string, Color> _nodeColorOverrides = new();
-        private NodeGraphProcessorApi _nodeGraphProcessorApi;
 
         [MenuItem("Tools/Scene Dependency Graph")]
         public static void OpenWindow()
@@ -123,7 +120,6 @@ namespace RonJames.DependencyGraphTool
 
         private void OnEnable()
         {
-            _nodeGraphProcessorApi = NodeGraphProcessorApi.Detect();
             LoadNodeTypeColorPreferences();
             LoadNodeColorPreferences();
             LoadWindowSettings();
@@ -211,36 +207,6 @@ namespace RonJames.DependencyGraphTool
             _iconSizeSlider.RegisterValueChangedCallback(evt => SetNodeIconSize(evt.newValue));
             toolbar.Add(_iconSizeSlider);
 
-            var ngpWindowButton = new ToolbarButton(() =>
-            {
-                if (_nodeGraphProcessorApi.TryOpenGraphWindow())
-                {
-                    return;
-                }
-
-                EditorUtility.DisplayDialog(
-                    "NodeGraphProcessor Not Found",
-                    "Install com.alelievr.node-graph-processor in your project to enable NodeGraphProcessor editor integration.",
-                    "OK");
-            })
-            {
-                text = "NGP Window",
-                tooltip = "Open NodeGraphProcessor graph window if the package is installed.",
-            };
-            toolbar.Add(ngpWindowButton);
-
-            var createNgpAssetButton = new ToolbarButton(ViewNodeGraphProcessorGraph)
-            {
-                text = "View NGP Graph",
-                tooltip = "Open the Scene Dependency Graph asset in NodeGraphProcessor and sync it from the current scene dependency graph.",
-            };
-            toolbar.Add(createNgpAssetButton);
-
-            _nodeGraphProcessorStatusLabel = new Label();
-            _nodeGraphProcessorStatusLabel.style.marginLeft = 8f;
-            toolbar.Add(_nodeGraphProcessorStatusLabel);
-            UpdateNodeGraphProcessorStatus();
-
             var filterField = new ToolbarMenu { text = "Filter: All" };
             filterField.menu.AppendAction("All", _ => SetFilter(null));
             foreach (DependencyType type in Enum.GetValues(typeof(DependencyType)))
@@ -283,58 +249,6 @@ namespace RonJames.DependencyGraphTool
         }
 
 
-        private void UpdateNodeGraphProcessorStatus()
-        {
-            if (_nodeGraphProcessorStatusLabel == null && _nodeGraphProcessorPanelStatusLabel == null)
-            {
-                return;
-            }
-
-            var status = _nodeGraphProcessorApi == null || !_nodeGraphProcessorApi.IsAvailable
-                ? "NGP: Not Installed"
-                : $"NGP: {_nodeGraphProcessorApi.DisplayVersion}";
-            if (_nodeGraphProcessorStatusLabel != null)
-            {
-                _nodeGraphProcessorStatusLabel.text = status;
-            }
-
-            if (_nodeGraphProcessorPanelStatusLabel != null)
-            {
-                _nodeGraphProcessorPanelStatusLabel.text = status;
-            }
-        }
-
-        private void ViewNodeGraphProcessorGraph()
-        {
-            if (_nodeGraphProcessorApi == null || !_nodeGraphProcessorApi.IsAvailable)
-            {
-                EditorUtility.DisplayDialog(
-                    "NodeGraphProcessor Not Found",
-                    "Install com.alelievr.node-graph-processor in your project to open and author scene dependency graphs.",
-                    "OK");
-                return;
-            }
-
-            if (_model == null)
-            {
-                EditorUtility.DisplayDialog("No Graph Data", "Refresh the graph before opening NodeGraphProcessor view.", "OK");
-                return;
-            }
-
-            if (_nodeGraphProcessorApi.TryViewGraph(_model, out var error))
-            {
-                UpdateNodeGraphProcessorStatus();
-                return;
-            }
-
-            EditorUtility.DisplayDialog(
-                "Unsupported NodeGraphProcessor Version",
-                string.IsNullOrWhiteSpace(error)
-                    ? "Could not open the Scene Dependency Graph in NodeGraphProcessor."
-                    : error,
-                "OK");
-        }
-
         private VisualElement CreateLeftPane()
         {
             var pane = new VisualElement { style = { flexGrow = 1 } };
@@ -360,24 +274,8 @@ namespace RonJames.DependencyGraphTool
             visibilityToolbarSecondary.Add(hideAllButton);
             pane.Add(visibilityToolbarSecondary);
 
-            var ngpBox = new VisualElement();
-            ngpBox.style.marginTop = 6f;
-            ngpBox.style.paddingTop = 4f;
-            ngpBox.style.paddingBottom = 4f;
-            ngpBox.style.borderTopWidth = 1f;
-            ngpBox.style.borderTopColor = new Color(1f, 1f, 1f, 0.08f);
-            ngpBox.Add(new Label("NodeGraphProcessor") { style = { unityFontStyleAndWeight = FontStyle.Bold } });
-            _nodeGraphProcessorPanelStatusLabel = new Label();
-            ngpBox.Add(_nodeGraphProcessorPanelStatusLabel);
-
-            var ngpButtonRow = new VisualElement { style = { flexDirection = FlexDirection.Row } };
-            ngpButtonRow.Add(new Button(ViewNodeGraphProcessorGraph) { text = "View Graph" });
-            ngpBox.Add(ngpButtonRow);
-            pane.Add(ngpBox);
-
             _hierarchyScrollView = new ScrollView { style = { flexGrow = 1 } };
             pane.Add(_hierarchyScrollView);
-            UpdateNodeGraphProcessorStatus();
             return pane;
         }
 
