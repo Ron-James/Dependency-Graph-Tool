@@ -59,7 +59,9 @@ namespace RonJames.DependencyGraphTool
             bool isOutput,
             bool hasValue,
             bool isUnityEvent,
-            string valueSummary)
+            string valueSummary,
+            Type valueType = null,
+            UnityEngine.Object unityReferenceValue = null)
         {
             if (node == null || string.IsNullOrWhiteSpace(name))
             {
@@ -79,6 +81,16 @@ namespace RonJames.DependencyGraphTool
             if (!string.IsNullOrWhiteSpace(valueSummary))
             {
                 slot.ValueSummary = valueSummary;
+            }
+
+            if (valueType != null)
+            {
+                slot.ValueType = valueType;
+            }
+
+            if (unityReferenceValue != null)
+            {
+                slot.UnityReferenceValue = unityReferenceValue;
             }
         }
     }
@@ -154,7 +166,8 @@ namespace RonJames.DependencyGraphTool
                     isOutput: true,
                     hasValue: listenerCount > 0,
                     isUnityEvent: true,
-                    valueSummary: listenerCount == 0 ? "No listeners" : $"{listenerCount} listener(s)");
+                    valueSummary: listenerCount == 0 ? "No listeners" : $"{listenerCount} listener(s)",
+                    valueType: field.FieldType);
 
                 for (var listenerIndex = 0; listenerIndex < listenerCount; listenerIndex++)
                 {
@@ -230,7 +243,9 @@ namespace RonJames.DependencyGraphTool
                     isOutput: true,
                     hasValue: value != null,
                     isUnityEvent: typeof(UnityEventBase).IsAssignableFrom(field.FieldType),
-                    valueSummary: DescribeSerializedValue(value));
+                    valueSummary: DescribeSerializedValue(value),
+                    valueType: field.FieldType,
+                    unityReferenceValue: value as UnityEngine.Object);
 
                 if (value == null)
                 {

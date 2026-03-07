@@ -91,6 +91,7 @@ namespace RonJames.DependencyGraphTool
         private Label _detailsLabel;
         private ObjectField _reassignField;
         private ColorField _nodeColorField;
+        private ScrollView _fieldSlotsContainer;
         private FloatField _horizontalSpacingField;
         private FloatField _verticalSpacingField;
         private FloatField _groupSpacingField;
@@ -287,6 +288,9 @@ namespace RonJames.DependencyGraphTool
             _detailsLabel = new Label("Select a node or edge.") { style = { whiteSpace = WhiteSpace.Normal } };
             pane.Add(_detailsLabel);
 
+            _fieldSlotsContainer = new ScrollView { style = { maxHeight = 260f } };
+            pane.Add(_fieldSlotsContainer);
+
             _nodeColorField = new ColorField("Node Color")
             {
                 value = Color.gray,
@@ -325,10 +329,12 @@ namespace RonJames.DependencyGraphTool
             if (node == null)
             {
                 _detailsLabel.text = "Select a node or edge.";
+                PopulateUnityReferenceSlots(null);
                 return;
             }
 
             _detailsLabel.text = BuildNodeDetailsText(node);
+            PopulateUnityReferenceSlots(node);
 
             if (_nodeColorField != null)
             {
@@ -392,9 +398,87 @@ namespace RonJames.DependencyGraphTool
             _selectedEdge = edge;
 
             _detailsLabel.text = $"Edge: {edge.From.DisplayName} -> {edge.To.DisplayName}\nField: {edge.FieldName}\nType: {edge.Type}\nDetails: {edge.Details}";
+            PopulateUnityReferenceSlots(null);
             _reassignField.value = edge.ActionContext?.UnityReferenceValue;
         }
 
+
+        private void PopulateUnityReferenceSlots(DependencyNode node)
+        {
+            if (_fieldSlotsContainer == null)
+            {
+                return;
+            }
+
+            _fieldSlotsContainer.Clear();
+            if (node == null)
+            {
+                return;
+            }
+
+            foreach (var slot in node.FieldSlots.OrderBy(slot => slot.Name, StringComparer.OrdinalIgnoreCase))
+            {
+                if (slot == null || string.IsNullOrWhiteSpace(slot.Name))
+                {
+                    continue;
+                }
+
+                var slotType = slot.ValueType;
+                var isUnityObjectSlot = slot.UnityReferenceValue != null
+                                        || (slotType != null && typeof(UnityEngine.Object).IsAssignableFrom(slotType));
+                if (!isUnityObjectSlot)
+                {
+                    continue;
+                }
+
+                var objectFieldType = slotType != null && typeof(UnityEngine.Object).IsAssignableFrom(slotType)
+                    ? slotType
+                    : typeof(UnityEngine.Object);
+
+                var objectField = new ObjectField($"{(slot.IsOutput ? "OUT" : "IN")}: {slot.Name}")
+                {
+                    objectType = objectFieldType,
+                    allowSceneObjects = true,
+                    value = slot.UnityReferenceValue,
+                    tooltip = "Drag and drop a Unity object to reassign this reference.",
+                };
+
+                objectField.RegisterValueChangedCallback(evt =>
+                    ApplyNodeSlotReference(node, slot, evt.newValue as UnityEngine.Object));
+
+                _fieldSlotsContainer.Add(objectField);
+            }
+        }
+
+        private void ApplyNodeSlotReference(DependencyNode node, DependencyFieldSlot slot, UnityEngine.Object newValue)
+        {
+            if (node?.Owner is not UnityEngine.Object ownerObject || slot == null || string.IsNullOrWhiteSpace(slot.Name))
+            {
+                return;
+            }
+
+            var field = TypeUtility.GetAllInstanceFields(node.Owner.GetType())
+                .FirstOrDefault(candidate => string.Equals(candidate.Name, slot.Name, StringComparison.Ordinal));
+            if (field == null || !typeof(UnityEngine.Object).IsAssignableFrom(field.FieldType))
+            {
+                return;
+            }
+
+            if (newValue != null && !field.FieldType.IsAssignableFrom(newValue.GetType()))
+            {
+                return;
+            }
+
+            Undo.RecordObject(ownerObject, "Reassign Dependency Reference");
+            field.SetValue(node.Owner, newValue);
+            EditorUtility.SetDirty(ownerObject);
+            if (ownerObject is Component component)
+            {
+                EditorSceneManager.MarkSceneDirty(component.gameObject.scene);
+            }
+
+            RefreshGraph();
+        }
 
         private void ApplySpacingSettings()
         {

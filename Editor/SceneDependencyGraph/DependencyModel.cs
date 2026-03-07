@@ -31,6 +31,8 @@ namespace RonJames.DependencyGraphTool
         public bool HasValue;
         public bool IsUnityEvent;
         public string ValueSummary;
+        public Type ValueType;
+        public UnityEngine.Object UnityReferenceValue;
     }
 
     [Serializable]
