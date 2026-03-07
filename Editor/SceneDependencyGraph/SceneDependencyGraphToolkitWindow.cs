@@ -107,7 +107,7 @@ namespace RonJames.DependencyGraphTool
             splitHorizontal.Add(CreateLeftPane());
             splitHorizontal.Add(splitCenterRight);
 
-            var graphScrollView = new ScrollView(ScrollViewMode.Both)
+            var graphScrollView = new ScrollView()
             {
                 horizontalScrollerVisibility = ScrollerVisibility.Auto,
                 verticalScrollerVisibility = ScrollerVisibility.Auto,
@@ -1219,7 +1219,9 @@ namespace RonJames.DependencyGraphTool
             {
                 var localRect = contentRect;
                 var worldCenter = portRow.worldBound.center;
-                var localCenter = WorldToLocal(worldCenter);
+                var localCenter = new Vector2(
+                    worldCenter.x - worldBound.xMin,
+                    worldCenter.y - worldBound.yMin);
                 var x = isOutput ? localCenter.x + (portRow.worldBound.width * 0.5f) : localCenter.x - (portRow.worldBound.width * 0.5f);
                 x = Mathf.Clamp(x, localRect.xMin, localRect.xMax);
                 _portAnchorByKey[portKey] = new Vector2(x, localCenter.y);
