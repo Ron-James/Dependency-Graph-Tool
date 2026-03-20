@@ -262,7 +262,7 @@ namespace RonJames.DependencyGraphTool
             var visibilityToolbar = new VisualElement();
             visibilityToolbar.style.flexDirection = FlexDirection.Row;
 
-            var showFilteredButton = new Button(() => SetVisibilityForFilteredNodes(true)) { text = "Show Filtered" };
+            var showFilteredButton = new Button(() => SetVisibilityForFilteredNodes(true)) { text = "Show Filtered Maps" };
             var hideFilteredButton = new Button(() => SetVisibilityForFilteredNodes(false)) { text = "Hide Filtered" };
             visibilityToolbar.Add(showFilteredButton);
             visibilityToolbar.Add(hideFilteredButton);
@@ -288,6 +288,14 @@ namespace RonJames.DependencyGraphTool
 
             _detailsLabel = new Label("Select a node or edge.") { style = { whiteSpace = WhiteSpace.Normal } };
             pane.Add(_detailsLabel);
+
+            var showFullMapButton = new Button(ShowSelectedNodeFullMap) { text = "Show Full Map" };
+            showFullMapButton.tooltip = "Reveal the selected node plus every node transitively connected to it in the original graph view.";
+            pane.Add(showFullMapButton);
+
+            var hideSelectedNodeButton = new Button(HideSelectedNode) { text = "Hide Selected Node" };
+            hideSelectedNodeButton.tooltip = "Hide only the currently selected node from the graph.";
+            pane.Add(hideSelectedNodeButton);
 
             _fieldSlotsContainer = new ScrollView { style = { maxHeight = 260f } };
             pane.Add(_fieldSlotsContainer);
@@ -803,9 +811,9 @@ namespace RonJames.DependencyGraphTool
 
             var visibilityButton = new Button(() => ToggleNodeVisibility(node))
             {
-                text = _hiddenNodeGuids.Contains(node.GUID) ? "Show" : "Hide",
+                text = _hiddenNodeGuids.Contains(node.GUID) ? "Show Map" : "Hide",
             };
-            visibilityButton.style.width = 56f;
+            visibilityButton.style.width = 88f;
             visibilityButton.style.flexShrink = 0;
             visibilityButton.style.unityTextAlign = TextAnchor.MiddleCenter;
             row.Add(visibilityButton);
@@ -882,7 +890,7 @@ namespace RonJames.DependencyGraphTool
                 _knownNodeGuids.Add(node.GUID);
                 if (showNodes)
                 {
-                    ShowNodeAndConnectedNodes(node.GUID);
+                    ShowNodeAndFullDependencyMap(node.GUID);
                 }
                 else
                 {
@@ -1016,7 +1024,7 @@ namespace RonJames.DependencyGraphTool
 
             if (_hiddenNodeGuids.Contains(node.GUID))
             {
-                ShowNodeAndConnectedNodes(node.GUID);
+                ShowNodeAndFullDependencyMap(node.GUID);
             }
             else
             {
@@ -1028,14 +1036,42 @@ namespace RonJames.DependencyGraphTool
             RedrawGraphOnly();
         }
 
-        private void ShowNodeAndConnectedNodes(string startingNodeGuid)
+        private void ShowSelectedNodeFullMap()
+        {
+            if (_selectedNode == null || string.IsNullOrWhiteSpace(_selectedNode.GUID))
+            {
+                return;
+            }
+
+            ShowNodeAndFullDependencyMap(_selectedNode.GUID);
+            SaveHiddenNodePreferences();
+            RebuildHierarchyList();
+            RedrawGraphOnly();
+            _graphView?.FocusNode(_selectedNode);
+        }
+
+        private void HideSelectedNode()
+        {
+            if (_selectedNode == null || string.IsNullOrWhiteSpace(_selectedNode.GUID))
+            {
+                return;
+            }
+
+            _knownNodeGuids.Add(_selectedNode.GUID);
+            _hiddenNodeGuids.Add(_selectedNode.GUID);
+            SaveHiddenNodePreferences();
+            RebuildHierarchyList();
+            RedrawGraphOnly();
+        }
+
+        private void ShowNodeAndFullDependencyMap(string startingNodeGuid)
         {
             if (_model == null || string.IsNullOrWhiteSpace(startingNodeGuid))
             {
                 return;
             }
 
-            var connectedNodeGuids = CollectConnectedNodeGuids(startingNodeGuid);
+            var connectedNodeGuids = CollectTransitivelyConnectedNodeGuids(startingNodeGuid);
             foreach (var nodeGuid in connectedNodeGuids)
             {
                 _knownNodeGuids.Add(nodeGuid);
@@ -1043,7 +1079,7 @@ namespace RonJames.DependencyGraphTool
             }
         }
 
-        private HashSet<string> CollectConnectedNodeGuids(string startingNodeGuid)
+        private HashSet<string> CollectTransitivelyConnectedNodeGuids(string startingNodeGuid)
         {
             var connectedNodeGuids = new HashSet<string>();
             if (_model?.Edges == null)
