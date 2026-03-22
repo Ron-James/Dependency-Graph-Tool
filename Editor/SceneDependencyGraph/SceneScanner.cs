@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using UnityEditor;
 using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.SceneManagement;
@@ -21,20 +22,188 @@ namespace RonJames.DependencyGraphTool
         {
             var model = new DependencyModel();
             var registry = new DependencyNodeRegistry(model.Nodes);
-            var components = EnumerateSceneComponents();
+            var scannedUnityObjects = new HashSet<int>();
+            var scannedPrefabRoots = new HashSet<int>();
+            var pendingUnityObjects = new Queue<UnityEngine.Object>();
 
-            foreach (var component in components)
+            foreach (var component in EnumerateSceneComponents())
+            {
+                ScanUnityObject(component, model, registry, scannedUnityObjects, pendingUnityObjects);
+            }
+
+            EnqueueReferencedAssets(model, pendingUnityObjects, scannedUnityObjects, scannedPrefabRoots);
+
+            while (pendingUnityObjects.Count > 0)
+            {
+                var pendingObject = pendingUnityObjects.Dequeue();
+                if (pendingObject == null)
+                {
+                    continue;
+                }
+
+                if (pendingObject is ScriptableObject scriptableObject)
+                {
+                    ScanUnityObject(scriptableObject, model, registry, scannedUnityObjects, pendingUnityObjects);
+                    EnqueueReferencedAssets(model, pendingUnityObjects, scannedUnityObjects, scannedPrefabRoots);
+                    continue;
+                }
+
+                var prefabRoot = GetPrefabAssetRoot(pendingObject);
+                if (prefabRoot == null)
+                {
+                    continue;
+                }
+
+                var prefabRootId = prefabRoot.GetInstanceID();
+                if (!scannedPrefabRoots.Add(prefabRootId))
+                {
+                    continue;
+                }
+
+                ScanPrefabAsset(prefabRoot, model, registry, scannedUnityObjects, pendingUnityObjects);
+                EnqueueReferencedAssets(model, pendingUnityObjects, scannedUnityObjects, scannedPrefabRoots);
+            }
+
+            return model;
+        }
+
+        private void ScanUnityObject(
+            UnityEngine.Object unityObject,
+            DependencyModel model,
+            DependencyNodeRegistry registry,
+            HashSet<int> scannedUnityObjects,
+            Queue<UnityEngine.Object> pendingUnityObjects)
+        {
+            if (unityObject == null)
+            {
+                return;
+            }
+
+            var instanceId = unityObject.GetInstanceID();
+            if (!scannedUnityObjects.Add(instanceId))
+            {
+                return;
+            }
+
+            _unityEventScanner.Scan(unityObject, model.Edges, registry);
+            _serializedFieldScanner.Scan(unityObject, model.Edges, registry, _managedObjectScanner);
+            pendingUnityObjects.Enqueue(unityObject);
+        }
+
+        private void ScanPrefabAsset(
+            GameObject prefabRoot,
+            DependencyModel model,
+            DependencyNodeRegistry registry,
+            HashSet<int> scannedUnityObjects,
+            Queue<UnityEngine.Object> pendingUnityObjects)
+        {
+            if (prefabRoot == null)
+            {
+                return;
+            }
+
+            var prefabNode = registry.GetOrCreateNode(prefabRoot);
+            var prefabComponents = prefabRoot.GetComponentsInChildren<Component>(true);
+            foreach (var component in prefabComponents)
             {
                 if (component == null)
                 {
                     continue;
                 }
 
-                _unityEventScanner.Scan(component, model.Edges, registry);
-                _serializedFieldScanner.Scan(component, model.Edges, registry, _managedObjectScanner);
+                var componentNode = registry.GetOrCreateNode(component);
+                var componentLabel = $"Component/{component.gameObject.name}/{TypeUtility.GetFriendlyTypeName(component.GetType())}";
+                DependencyFieldSlotUtility.Upsert(
+                    prefabNode,
+                    componentLabel,
+                    isOutput: true,
+                    hasValue: true,
+                    isUnityEvent: false,
+                    valueSummary: component.gameObject == prefabRoot
+                        ? component.GetType().Name
+                        : $"{component.gameObject.name} ({component.GetType().Name})",
+                    valueType: component.GetType(),
+                    unityReferenceValue: component);
+
+                model.Edges.Add(new DependencyEdge
+                {
+                    From = prefabNode,
+                    To = componentNode,
+                    FieldName = componentLabel,
+                    Type = DependencyType.SerializedUnityRef,
+                    Details = "Prefab component",
+                    ActionContext = new DependencyActionContext
+                    {
+                        OwnerObject = prefabRoot,
+                        UnityReferenceValue = component,
+                    },
+                });
+
+                ScanUnityObject(component, model, registry, scannedUnityObjects, pendingUnityObjects);
+            }
+        }
+
+        private static void EnqueueReferencedAssets(
+            DependencyModel model,
+            Queue<UnityEngine.Object> pendingUnityObjects,
+            HashSet<int> scannedUnityObjects,
+            HashSet<int> scannedPrefabRoots)
+        {
+            if (model?.Nodes == null)
+            {
+                return;
             }
 
-            return model;
+            foreach (var node in model.Nodes)
+            {
+                if (node?.Owner is not UnityEngine.Object unityObject || unityObject == null)
+                {
+                    continue;
+                }
+
+                if (unityObject is ScriptableObject scriptableObject &&
+                    EditorUtility.IsPersistent(scriptableObject) &&
+                    !scannedUnityObjects.Contains(scriptableObject.GetInstanceID()))
+                {
+                    pendingUnityObjects.Enqueue(scriptableObject);
+                    continue;
+                }
+
+                var prefabRoot = GetPrefabAssetRoot(unityObject);
+                if (prefabRoot != null && !scannedPrefabRoots.Contains(prefabRoot.GetInstanceID()))
+                {
+                    pendingUnityObjects.Enqueue(prefabRoot);
+                }
+            }
+        }
+
+        private static GameObject GetPrefabAssetRoot(UnityEngine.Object unityObject)
+        {
+            if (unityObject == null || !EditorUtility.IsPersistent(unityObject))
+            {
+                return null;
+            }
+
+            var sourceGameObject = unityObject switch
+            {
+                GameObject gameObject => gameObject,
+                Component component => component.gameObject,
+                _ => null,
+            };
+
+            if (sourceGameObject == null)
+            {
+                return null;
+            }
+
+            var assetPath = AssetDatabase.GetAssetPath(sourceGameObject);
+            if (string.IsNullOrWhiteSpace(assetPath) ||
+                PrefabUtility.GetPrefabAssetType(sourceGameObject) == PrefabAssetType.NotAPrefab)
+            {
+                return null;
+            }
+
+            return AssetDatabase.LoadAssetAtPath<GameObject>(assetPath);
         }
 
         private static IEnumerable<Component> EnumerateSceneComponents()
@@ -108,7 +277,7 @@ namespace RonJames.DependencyGraphTool
             private readonly string _fieldName;
             private readonly int _listenerIndex;
 
-            public PersistentUnityEventListenerKey(Component owner, FieldInfo field, int listenerIndex)
+            public PersistentUnityEventListenerKey(UnityEngine.Object owner, FieldInfo field, int listenerIndex)
             {
                 _ownerId = owner.GetInstanceID();
                 _fieldName = field.Name;
@@ -141,10 +310,15 @@ namespace RonJames.DependencyGraphTool
             }
         }
 
-        public void Scan(Component component, List<DependencyEdge> edges, DependencyNodeRegistry registry)
+        public void Scan(UnityEngine.Object ownerObject, List<DependencyEdge> edges, DependencyNodeRegistry registry)
         {
-            var fields = TypeUtility.GetAllInstanceFields(component.GetType());
-            var fromNode = registry.GetOrCreateNode(component);
+            if (ownerObject == null)
+            {
+                return;
+            }
+
+            var fields = TypeUtility.GetAllInstanceFields(ownerObject.GetType());
+            var fromNode = registry.GetOrCreateNode(ownerObject);
 
             foreach (var field in fields)
             {
@@ -153,7 +327,7 @@ namespace RonJames.DependencyGraphTool
                     continue;
                 }
 
-                var eventValue = field.GetValue(component) as UnityEventBase;
+                var eventValue = field.GetValue(ownerObject) as UnityEventBase;
                 if (eventValue == null)
                 {
                     continue;
@@ -178,7 +352,7 @@ namespace RonJames.DependencyGraphTool
                         : "Missing Target";
 
                     var listenerNode = registry.GetOrCreateNode(
-                        new PersistentUnityEventListenerKey(component, field, listenerIndex),
+                        new PersistentUnityEventListenerKey(ownerObject, field, listenerIndex),
                         $"{field.Name}[{listenerIndex}] → {targetLabel}.{SafeMethodName(methodName)}");
 
                     var targetNode = target != null
@@ -199,7 +373,7 @@ namespace RonJames.DependencyGraphTool
                         Details = $"Persistent listener on {field.Name}",
                         ActionContext = new DependencyActionContext
                         {
-                            OwnerObject = component,
+                            OwnerObject = ownerObject,
                             FieldInfo = field,
                             PersistentListenerIndex = listenerIndex,
                             UnityReferenceValue = target,
@@ -223,20 +397,25 @@ namespace RonJames.DependencyGraphTool
     internal sealed class SerializedFieldScanner
     {
         public void Scan(
-            Component component,
+            UnityEngine.Object ownerObject,
             List<DependencyEdge> edges,
             DependencyNodeRegistry registry,
             ManagedObjectScanner managedObjectScanner)
         {
-            var ownerNode = registry.GetOrCreateNode(component);
-            foreach (var field in TypeUtility.GetAllInstanceFields(component.GetType()))
+            if (ownerObject == null)
+            {
+                return;
+            }
+
+            var ownerNode = registry.GetOrCreateNode(ownerObject);
+            foreach (var field in TypeUtility.GetAllInstanceFields(ownerObject.GetType()))
             {
                 if (!TypeUtility.IsSerializedField(field))
                 {
                     continue;
                 }
 
-                var value = field.GetValue(component);
+                var value = field.GetValue(ownerObject);
                 DependencyFieldSlotUtility.Upsert(
                     ownerNode,
                     field.Name,
@@ -262,7 +441,7 @@ namespace RonJames.DependencyGraphTool
                         Type = TypeUtility.HasOdinSerializeAttribute(field) ? DependencyType.OdinSerializedRef : DependencyType.SerializedUnityRef,
                         ActionContext = new DependencyActionContext
                         {
-                            OwnerObject = component,
+                            OwnerObject = ownerObject,
                             FieldInfo = field,
                             UnityReferenceValue = unityRef,
                         },
@@ -277,7 +456,7 @@ namespace RonJames.DependencyGraphTool
                     continue;
                 }
 
-                managedObjectScanner.ScanManagedField(component, ownerNode, field, value, edges, registry);
+                managedObjectScanner.ScanManagedField(ownerObject, ownerNode, field, value, edges, registry);
             }
         }
 
@@ -307,7 +486,7 @@ namespace RonJames.DependencyGraphTool
     internal sealed class ManagedObjectScanner
     {
         public void ScanManagedField(
-            Component owner,
+            UnityEngine.Object owner,
             DependencyNode ownerNode,
             FieldInfo field,
             object rootValue,
@@ -325,7 +504,7 @@ namespace RonJames.DependencyGraphTool
         }
 
         private void ScanObjectRecursive(
-            Component owner,
+            UnityEngine.Object owner,
             DependencyNode fromNode,
             FieldInfo rootField,
             string memberPath,
