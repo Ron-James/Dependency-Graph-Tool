@@ -266,11 +266,24 @@ namespace RonJames.DependencyGraphTool
             }
 
             var monoBehaviourNodes = new Dictionary<GameObject, List<DependencyNode>>();
+            var prefabNodesByRoot = new Dictionary<GameObject, List<DependencyNode>>();
             var scriptableObjectNodes = new List<DependencyNode>();
             var otherNodes = new List<DependencyNode>();
 
             foreach (var node in GetFilteredNodes())
             {
+                if (TryGetPrefabAssetRoot(node, out var prefabRoot))
+                {
+                    if (!prefabNodesByRoot.TryGetValue(prefabRoot, out var prefabNodes))
+                    {
+                        prefabNodes = new List<DependencyNode>();
+                        prefabNodesByRoot[prefabRoot] = prefabNodes;
+                    }
+
+                    prefabNodes.Add(node);
+                    continue;
+                }
+
                 if (node?.Owner is MonoBehaviour monoBehaviour && monoBehaviour != null)
                 {
                     if (!monoBehaviourNodes.TryGetValue(monoBehaviour.gameObject, out var gameObjectNodes))
@@ -293,6 +306,7 @@ namespace RonJames.DependencyGraphTool
             }
 
             AddHierarchySection(monoBehaviourNodes);
+            AddPrefabSection(prefabNodesByRoot);
             AddNodeSection("Scriptable Objects", "group:scriptable", scriptableObjectNodes);
             AddNodeSection("Other Nodes", "group:other", otherNodes);
         }
@@ -342,17 +356,24 @@ namespace RonJames.DependencyGraphTool
             var nameButton = new Button(() => FocusNode(node))
             {
                 text = _hiddenNodeGuids.Contains(node.GUID) ? $"{node.DisplayName} (hidden)" : node.DisplayName,
+                tooltip = node.DisplayName,
             };
             nameButton.style.flexGrow = 1;
+            nameButton.style.flexShrink = 1;
+            nameButton.style.flexBasis = 0f;
+            nameButton.style.overflow = Overflow.Hidden;
             nameButton.style.unityTextAlign = TextAnchor.MiddleLeft;
             row.Add(nameButton);
 
-            var toggleButton = new Button(() => ToggleNodeVisibility(node))
+            var visibilityToggle = new Toggle
             {
-                text = _hiddenNodeGuids.Contains(node.GUID) ? "Show" : "Hide",
+                value = !_hiddenNodeGuids.Contains(node.GUID),
+                tooltip = "Toggle this node's visibility in the graph.",
             };
-            toggleButton.style.width = 56f;
-            row.Add(toggleButton);
+            visibilityToggle.style.flexShrink = 0;
+            visibilityToggle.style.marginLeft = 6f;
+            visibilityToggle.RegisterValueChangedCallback(evt => SetNodeVisibility(node, evt.newValue));
+            row.Add(visibilityToggle);
 
             return row;
         }
@@ -475,6 +496,91 @@ namespace RonJames.DependencyGraphTool
             return foldout;
         }
 
+        private void AddPrefabSection(Dictionary<GameObject, List<DependencyNode>> nodesByPrefabRoot)
+        {
+            var sectionKey = "group:prefabs";
+            var prefabFoldout = CreateFoldout("Prefab Nodes", sectionKey, defaultExpanded: true);
+            _hierarchyScrollView.Add(prefabFoldout);
+
+            if (nodesByPrefabRoot.Count == 0)
+            {
+                prefabFoldout.Add(CreateInfoLabel("No prefab nodes in the current filter."));
+                return;
+            }
+
+            foreach (var pair in nodesByPrefabRoot.OrderBy(entry => entry.Key.name, StringComparer.OrdinalIgnoreCase))
+            {
+                var prefabRoot = pair.Key;
+                var assetPath = AssetDatabase.GetAssetPath(prefabRoot);
+                var groupKey = string.IsNullOrWhiteSpace(assetPath) ? $"prefab:{prefabRoot.name}" : $"prefab:{assetPath}";
+                var prefabGroup = CreateFoldout(prefabRoot.name, groupKey, defaultExpanded: false);
+                prefabFoldout.Add(prefabGroup);
+
+                var orderedNodes = pair.Value
+                    .Distinct()
+                    .OrderByDescending(node => node?.Owner == prefabRoot)
+                    .ThenBy(node => node?.DisplayName, StringComparer.OrdinalIgnoreCase);
+
+                foreach (var node in orderedNodes)
+                {
+                    prefabGroup.Add(CreateNodeRow(node));
+                }
+            }
+        }
+
+        private void SetNodeVisibility(DependencyNode node, bool shouldShow)
+        {
+            if (node == null || string.IsNullOrWhiteSpace(node.GUID))
+            {
+                return;
+            }
+
+            _knownNodeGuids.Add(node.GUID);
+            if (shouldShow)
+            {
+                ShowNodeAndConnectedNodes(node.GUID);
+            }
+            else
+            {
+                _hiddenNodeGuids.Add(node.GUID);
+            }
+
+            SaveHiddenNodePreferences();
+            RebuildHierarchyList();
+            RedrawGraphOnly();
+        }
+
+        private static bool TryGetPrefabAssetRoot(DependencyNode node, out GameObject prefabRoot)
+        {
+            prefabRoot = null;
+            if (node?.Owner is not UnityEngine.Object unityObject || unityObject == null || !EditorUtility.IsPersistent(unityObject))
+            {
+                return false;
+            }
+
+            var sourceGameObject = unityObject switch
+            {
+                GameObject gameObject => gameObject,
+                Component component => component.gameObject,
+                _ => null,
+            };
+
+            if (sourceGameObject == null)
+            {
+                return false;
+            }
+
+            var assetPath = AssetDatabase.GetAssetPath(sourceGameObject);
+            if (string.IsNullOrWhiteSpace(assetPath) ||
+                PrefabUtility.GetPrefabAssetType(sourceGameObject) == PrefabAssetType.NotAPrefab)
+            {
+                return false;
+            }
+
+            prefabRoot = AssetDatabase.LoadAssetAtPath<GameObject>(assetPath);
+            return prefabRoot != null;
+        }
+
         private static string GetTransformPath(Transform transform)
         {
             var names = new List<string>();
@@ -571,24 +677,7 @@ namespace RonJames.DependencyGraphTool
 
         private void ToggleNodeVisibility(DependencyNode node)
         {
-            if (node == null || string.IsNullOrWhiteSpace(node.GUID))
-            {
-                return;
-            }
-
-            _knownNodeGuids.Add(node.GUID);
-            if (_hiddenNodeGuids.Contains(node.GUID))
-            {
-                ShowNodeAndConnectedNodes(node.GUID);
-            }
-            else
-            {
-                _hiddenNodeGuids.Add(node.GUID);
-            }
-
-            SaveHiddenNodePreferences();
-            RebuildHierarchyList();
-            RedrawGraphOnly();
+            SetNodeVisibility(node, _hiddenNodeGuids.Contains(node?.GUID));
         }
 
         private void ShowNodeAndConnectedNodes(string startingNodeGuid)
