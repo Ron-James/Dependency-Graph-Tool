@@ -80,7 +80,11 @@ namespace RonJames.DependencyGraphTool
             NotifySelection();
         }
 
-        public void Populate(IReadOnlyList<DependencyNode> nodes, IReadOnlyList<DependencyEdge> edges, DependencyType? filterType)
+        public void Populate(
+            IReadOnlyList<DependencyNode> nodes,
+            IReadOnlyList<DependencyEdge> edges,
+            DependencyType? filterType,
+            bool frameAfterPopulate = true)
         {
             DeleteElements(graphElements);
             _nodeLookup.Clear();
@@ -150,7 +154,10 @@ namespace RonJames.DependencyGraphTool
                 AddElement(graphEdge);
             }
 
-            FrameAll();
+            if (frameAfterPopulate)
+            {
+                FrameAll();
+            }
         }
 
         public void SetTypeColorOverrides(IReadOnlyDictionary<string, Color> typeColorOverrides)
