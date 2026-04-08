@@ -103,6 +103,8 @@ namespace RonJames.DependencyGraphTool
         private float _verticalSpacing = 48f;
         private float _groupSpacing = 520f;
         private bool _autoHideNodesOnRefresh = true;
+        private bool _hasOrganizedNodesAtLeastOnce;
+        private bool _nodePositionSaveScheduled;
 
         private DependencyType? _currentFilter;
         private DependencyModel _model;
@@ -141,6 +143,8 @@ namespace RonJames.DependencyGraphTool
             {
                 ApplySpacingSettings();
                 _graphView?.OrganizeNodes();
+                _hasOrganizedNodesAtLeastOnce = true;
+                SaveCurrentNodePositions();
             }) { text = "Organize" };
             toolbar.Add(organizeButton);
 
@@ -580,11 +584,12 @@ namespace RonJames.DependencyGraphTool
 
             LoadNodePositionPreferences();
             LoadNodeColorPreferences();
+            _hasOrganizedNodesAtLeastOnce = false;
             RebuildHierarchyList();
-            RedrawGraphOnly();
+            RedrawGraphOnly(frameGraph: true);
         }
 
-        private void RedrawGraphOnly()
+        private void RedrawGraphOnly(bool frameGraph = false)
         {
             if (_model == null)
             {
@@ -597,14 +602,46 @@ namespace RonJames.DependencyGraphTool
                 !_hiddenNodeGuids.Contains(edge.To.GUID));
 
             _graphView.SetTypeColorOverrides(_nodeTypeColorOverrides);
-            _graphView.Populate(visibleNodes, visibleEdges, _currentFilter);
+            _graphView.Populate(visibleNodes, visibleEdges, _currentFilter, frameGraph);
             foreach (var pair in _nodeColorOverrides)
             {
                 _graphView.SetNodeColorOverride(pair.Key, pair.Value);
             }
 
-            _graphView.OrganizeNodes();
+            if (ShouldAutoOrganizeVisibleNodes(visibleNodes))
+            {
+                _graphView.OrganizeNodes();
+                _hasOrganizedNodesAtLeastOnce = true;
+            }
             _graphView.ApplyNodePositions(_savedNodePositions);
+        }
+
+        private bool ShouldAutoOrganizeVisibleNodes(IReadOnlyList<DependencyNode> visibleNodes)
+        {
+            if (_graphView == null || visibleNodes == null || visibleNodes.Count == 0)
+            {
+                return false;
+            }
+
+            if (!_hasOrganizedNodesAtLeastOnce)
+            {
+                return true;
+            }
+
+            foreach (var node in visibleNodes)
+            {
+                if (node == null || string.IsNullOrWhiteSpace(node.GUID))
+                {
+                    continue;
+                }
+
+                if (!_savedNodePositions.ContainsKey(node.GUID))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private void RebuildHierarchyList()
@@ -1352,14 +1389,67 @@ namespace RonJames.DependencyGraphTool
                 return;
             }
 
+            if (_nodePositionSaveScheduled)
+            {
+                return;
+            }
+
+            _nodePositionSaveScheduled = true;
+            EditorApplication.delayCall += FlushNodePositionSave;
+        }
+
+        private void FlushNodePositionSave()
+        {
+            _nodePositionSaveScheduled = false;
+            if (_graphView == null)
+            {
+                return;
+            }
+
             var latestPositions = _graphView.CaptureNodePositions();
-            _savedNodePositions.Clear();
+            var didChange = false;
+
             foreach (var pair in latestPositions)
             {
+                if (!_savedNodePositions.TryGetValue(pair.Key, out var existingPosition) || !AreRectsEqual(existingPosition, pair.Value))
+                {
+                    didChange = true;
+                }
+
                 _savedNodePositions[pair.Key] = pair.Value;
             }
 
-            SaveNodePositionPreferences();
+            var keysToRemove = new List<string>();
+            foreach (var savedGuid in _savedNodePositions.Keys)
+            {
+                if (!latestPositions.ContainsKey(savedGuid))
+                {
+                    keysToRemove.Add(savedGuid);
+                }
+            }
+
+            if (keysToRemove.Count > 0)
+            {
+                didChange = true;
+                foreach (var key in keysToRemove)
+                {
+                    _savedNodePositions.Remove(key);
+                }
+            }
+
+            if (didChange)
+            {
+                SaveNodePositionPreferences();
+            }
+        }
+
+        private static bool AreRectsEqual(Rect a, Rect b)
+        {
+            const float epsilon = 0.001f;
+            return Mathf.Abs(a.x - b.x) < epsilon &&
+                   Mathf.Abs(a.y - b.y) < epsilon &&
+                   Mathf.Abs(a.width - b.width) < epsilon &&
+                   Mathf.Abs(a.height - b.height) < epsilon;
         }
 
         private void LoadNodePositionPreferences()
